@@ -266,6 +266,7 @@ class GameHubAiAdvisor(
 
         val asksStableQuestion = listOf(
             "que es ",
+            "que era ",
             "que son ",
             "que significa ",
             "define ",
@@ -335,6 +336,17 @@ class GameHubAiAdvisor(
         if (requiresFreshData) return null
 
         return when {
+            // Stable, textbook-style definitions are safe to answer offline.
+            // They are explicitly not evidence for fresh data, live events or prices.
+            Regex("""\bbig\s+bang\b""").containsMatchIn(normalized) ->
+                "El Big Bang es el modelo cosmológico que explica la expansión del universo observable desde una fase extremadamente caliente y densa, hace unos 13.800 millones de años. No describe una explosión en un lugar del espacio, sino la expansión del propio espacio."
+
+            Regex("""\bbiblia\b|\bbible\b""").containsMatchIn(normalized) ->
+                "La Biblia es una colección de libros y textos religiosos considerados sagrados en el cristianismo. Incluye el Antiguo y el Nuevo Testamento; varios de sus libros comparten tradición con el Tanaj judío. Sus textos fueron escritos por diferentes autores a lo largo de siglos."
+
+            Regex("""\bmanuscritos?\b|\bmanuscripts?\b""").containsMatchIn(normalized) ->
+                "Un manuscrito es un texto o documento escrito a mano, como una carta, un libro o un registro histórico. Antes de la imprenta muchos textos se copiaban manualmente; los manuscritos antiguos permiten estudiar lenguas, obras y acontecimientos del pasado."
+
             Regex("""\btik\s*tok\b|\btiktok\b""").containsMatchIn(normalized) ->
                 "TikTok es una plataforma social centrada en videos cortos donde las personas pueden crear, descubrir y compartir contenido. También ofrece recomendaciones personalizadas según la interacción del usuario."
 

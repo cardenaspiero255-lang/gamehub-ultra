@@ -169,6 +169,8 @@ class UltraFrontierOrchestrator(
 
         val researchRequired =
             query.verificationMode == UltraVerificationMode.REQUIRED ||
+                query.requiresInternet ||
+                query.requiresFreshData ||
                 query.kind == UltraGeneralQueryKind.CURRENT_DATA ||
                 query.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH
         if (researchRequired && !request.networkAvailable) {

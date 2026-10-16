@@ -79,7 +79,7 @@ object UltraGeneralQueryRouter {
         """\b(?:novedades|updates?|latest|newest|security patch|parche de seguridad|cuando sale|cuando se lanza|fecha de lanzamiento|fecha de salida|release date|launch date|coming out)\b"""
     )
     private val definitionPattern = Regex(
-        """\b(que es|que son|que significa|cual es el significado de|significado de|definicion de|what is|what are|what does|meaning of|define)\b"""
+        """\b(que es|que era|que son|que significa|cual es el significado de|significado de|definicion de|what is|what are|what does|meaning of|define)\b"""
     )
     private val conversationalTopicPattern = Regex(
         """^(?:(?:por favor|please)\s+)?(?:hablame|cuentame|dime(?=\s+(?:de|del|sobre|acerca\s+de)\b)|dime\s+algo|dime\s+que\s+sabes|quiero\s+saber|quiero\s+que\s+me\s+hables|me\s+puedes\s+hablar|puedes\s+hablarme|podrias\s+hablarme|explicame(?:\s+algo)?|ensename(?:\s+algo)?|que\s+sabes|dame\s+informacion|informame|describeme|tell\s+me\s+about|tell\s+me\s+something\s+about|talk\s+to\s+me\s+about|can\s+you\s+tell\s+me\s+about|could\s+you\s+tell\s+me\s+about|describe)\b(?:\s+(?:de|del|sobre|acerca\s+de|about))?\s+\S.+$"""
@@ -91,7 +91,7 @@ object UltraGeneralQueryRouter {
         """\b(cuantos|cuantas|como se llama|como se llaman|how many|how old|what year|which country)\b"""
     )
     private val generalKnowledgePattern = Regex(
-        """\b(que es|que son|que significa|cual es el significado de|significado de|definicion de|quien es|quienes son|por que|para que sirve|como funciona|explicame|explica|define|cual es|cuales son|donde esta|cuando fue|what is|what are|who is|who are|what does|meaning of|how does|explain|define|where is|when was)\b"""
+        """\b(que es|que era|que son|que significa|cual es el significado de|significado de|definicion de|quien es|quienes son|por que|para que sirve|como funciona|explicame|explica|define|cual es|cuales son|donde esta|cuando fue|what is|what are|who is|who are|what does|meaning of|how does|explain|define|where is|when was)\b"""
     )
     private val englishWhyQuestionPattern = Regex(
         """^(?:(?:hello|hi|please|and)\s+)?why\b"""
@@ -135,8 +135,12 @@ object UltraGeneralQueryRouter {
 
     fun classify(transcript: String): UltraGeneralQueryRequest {
         val clean = VoiceCommandParser.stripLeadingAssistantInvocation(transcript)
+        // "VS Code" is a proper product name, not an implicit "versus".
+        // An actual comparison such as "VS Code vs Android Studio" still
+        // contains its own independent comparison cue.
+        val comparisonText = clean.replace(Regex("""\bvs\s+code\b"""), "visual studio code")
         return when {
-            comparisonPattern.containsMatchIn(clean) ->
+            comparisonPattern.containsMatchIn(comparisonText) ->
                 request(
                     transcript = transcript,
                     kind = UltraGeneralQueryKind.COMPARISON_RESEARCH,

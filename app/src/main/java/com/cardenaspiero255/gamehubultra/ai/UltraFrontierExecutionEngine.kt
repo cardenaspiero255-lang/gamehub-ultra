@@ -129,6 +129,29 @@ class UltraFrontierExecutionEngine(
             )?.let { return it }
         }
 
+        // The full research budget includes routing/planning. If it has
+        // expired before the first provider call, fail closed without starting
+        // a nominal "1 ms" request (the provider can still block longer).
+        if (isResearchLane(plan) &&
+            remainingResearchMillis(plan, executionStartedNanos) <= 0L
+        ) {
+            auditTrail.record(
+                correlationId = request.correlationId,
+                lane = plan.lane,
+                event = UltraFrontierAuditEvent.ABSTAIN,
+                reasonCode = "FRONTIER_TIME_BUDGET_EXHAUSTED"
+            )
+            return complete(
+                request = request,
+                plan = plan,
+                answer = networkAbstention(
+                    message = "Se agotó el tiempo disponible antes de consultar fuentes. No usaré información local desactualizada.",
+                    reasonCode = "FRONTIER_TIME_BUDGET_EXHAUSTED"
+                ).copy(retryable = false),
+                executionStartedNanos = executionStartedNanos
+            )
+        }
+
         // Per-query cursor. Replanning can change the budgets of later
         // attempts, so previous slot consumption must be remembered.
         val nextStableProviderOffset = intArrayOf(request.researchProviderOffset)
@@ -777,11 +800,19 @@ class UltraFrontierExecutionEngine(
         attempt: Int,
         executionStartedNanos: Long
     ): UltraGeneralQueryRequest {
-        val budget = if (plan.sourceBudget > 0) {
+        // Use Long for source-budget arithmetic (user-configured policies
+        // can otherwise overflow Int) and keep the caller's provider cap.
+        val adaptiveBudget = if (plan.sourceBudget > 0) {
             (
-                plan.sourceBudget +
-                    ((attempt - 1) * plan.sourceBudgetStep)
-                ).coerceAtMost(plan.maxSourceBudget)
+                plan.sourceBudget.toLong() +
+                    (attempt.toLong() - 1L) * plan.sourceBudgetStep.toLong()
+                ).coerceAtMost(plan.maxSourceBudget.toLong()).toInt()
+        } else {
+            0
+        }
+        val budget = if (adaptiveBudget > 0) {
+            request.researchProviderBudget?.let { minOf(adaptiveBudget, it) }
+                ?: adaptiveBudget
         } else {
             0
         }

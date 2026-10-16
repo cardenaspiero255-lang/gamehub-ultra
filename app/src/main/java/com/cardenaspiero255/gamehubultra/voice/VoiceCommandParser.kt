@@ -13,6 +13,13 @@ object VoiceCommandParser {
     private val ASSISTANT_INVOCATION_PREFIX =
         Regex("""^(?:gamehub\s+ultra|gamehub|ultra)\s+""")
 
+    // X4 is a GameHub performance profile, never a searchable application.
+    // Disabling it selects the supported balanced profile; keep this anchored
+    // so descriptions, questions and game titles cannot trigger a mutation.
+    private val X4_DISABLE_COMMAND = Regex(
+        """^(?:desactiva|deshabilita|quita|apaga|disable|deactivate|turn off|switch off)\s+(?:(?:el|la|mi|the|my)\s+)?(?:(?:modo|perfil|mode|profile)\s+)?x4(?:\s+(?:modo|perfil|mode|profile))?$"""
+    )
+
     private val RESERVED_PROFILE_ALIASES = setOf(
         "x4",
         "balanceado",
@@ -32,6 +39,17 @@ object VoiceCommandParser {
         val clean = stripLeadingAssistantInvocation(transcript)
         if (clean.isBlank()) return VoiceCommand.Unknown(transcript)
         if (isUnsafeShellLikeCommand(clean)) return VoiceCommand.Unknown(transcript)
+
+        // A negation, hypothetical or question about an action is never
+        // permission to execute it, even when the phrase contains "X4".
+        // Centralized here so direct parser users stay protected too.
+        if (UltraCognitionIntentPolicy.isNonExecutableDiscussion(transcript)) {
+            return VoiceCommand.Unknown(transcript)
+        }
+
+        if (X4_DISABLE_COMMAND.matches(clean)) {
+            return VoiceCommand.SelectProfile(PerformanceProfile.BALANCED)
+        }
 
         parseGameAliasDefinition(clean)?.let { return it }
 
