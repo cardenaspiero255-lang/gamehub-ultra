@@ -33,6 +33,13 @@ object VoiceCommandParser {
         if (clean.isBlank()) return VoiceCommand.Unknown(transcript)
         if (isUnsafeShellLikeCommand(clean)) return VoiceCommand.Unknown(transcript)
 
+        // A negation, hypothetical or question about an action is never
+        // permission to execute it, even when the phrase contains "X4".
+        // Centralized here so direct parser users stay protected too.
+        if (UltraCognitionIntentPolicy.isNonExecutableDiscussion(transcript)) {
+            return VoiceCommand.Unknown(transcript)
+        }
+
         parseGameAliasDefinition(clean)?.let { return it }
 
         // Resolver-owned phrases must keep their semantic command meaning even
