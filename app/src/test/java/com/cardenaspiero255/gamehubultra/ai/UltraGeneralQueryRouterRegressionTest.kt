@@ -8,6 +8,33 @@ import kotlin.test.assertTrue
 class UltraGeneralQueryRouterRegressionTest {
 
     @Test
+    fun phase4CurrentComparisonsRequireFreshVerifiedEvidence() {
+        val queries = listOf(
+            "Ultra, compara RedMagic 11S Pro vs RedMagic 12 Pro ahora",
+            "Ultra, compara Bitcoin y Ethereum a cuánto están",
+            "Ultra, compare the current Android phones",
+            "Ultra, compara los precios de dos teléfonos"
+        )
+        queries.forEach { query ->
+            val request = UltraGeneralQueryRouter.classify(query)
+            assertEquals(UltraGeneralQueryKind.COMPARISON_RESEARCH, request.kind, query)
+            assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode, query)
+            assertTrue(request.requiresInternet, query)
+            assertTrue(request.requiresFreshData, query)
+        }
+    }
+
+    @Test
+    fun phase4StableComparisonsDoNotPretendToRequireLiveData() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, compara la fotosíntesis vs la respiración celular"
+        )
+        assertEquals(UltraGeneralQueryKind.COMPARISON_RESEARCH, request.kind)
+        assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode)
+        assertFalse(request.requiresFreshData)
+    }
+
+    @Test
     fun stableDefinitionIsOptionalInsteadOfInternetRequired() {
         val request = UltraGeneralQueryRouter.classify(
             "Ultra, ¿qué es un motor?"
@@ -332,4 +359,28 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
 
+
+    @Test
+    fun phase4ElectricCurrentInScientificComparisonsIsNotTemporal() {
+        val stable = listOf(
+            "Ultra, compare alternating current vs direct current",
+            "Ultra, compare electric current vs voltage",
+            "Ultra, compare current density vs current flow"
+        )
+        stable.forEach { query ->
+            val request = UltraGeneralQueryRouter.classify(query)
+            assertEquals(UltraGeneralQueryKind.COMPARISON_RESEARCH, request.kind, query)
+            assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode, query)
+            assertFalse(request.requiresFreshData, query)
+        }
+    }
+
+    @Test
+    fun phase4RealTemporalModifiersStillRequireFreshComparison() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, compare alternating current vs direct current today"
+        )
+        assertEquals(UltraGeneralQueryKind.COMPARISON_RESEARCH, request.kind)
+        assertTrue(request.requiresFreshData)
+    }
 }

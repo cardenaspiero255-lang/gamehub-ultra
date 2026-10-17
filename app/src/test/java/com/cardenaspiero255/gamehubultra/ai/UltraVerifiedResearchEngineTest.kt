@@ -70,7 +70,8 @@ class UltraVerifiedResearchEngineTest {
 
         assertEquals(UltraAnswerConfidence.LOW, result.confidence)
         assertTrue(result.abstained)
-        assertTrue(result.message.contains("corroboración", ignoreCase = true))
+        assertEquals("CONFLICTING_EVIDENCE", result.reasonCode)
+        assertTrue(result.message.contains("contradictorios", ignoreCase = true))
         engine.close()
     }
 
