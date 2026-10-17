@@ -10280,7 +10280,10 @@ Deno.test(
               error: [],
               result: {
                 XXBTZUSD: {
-                  c: [scenario === "mismatch" ? "92000.00" : "105100.00", "0.1"],
+                  c: [
+                    scenario === "mismatch" ? "92000.00" : "105100.00",
+                    "0.1",
+                  ],
                 },
               },
             });
