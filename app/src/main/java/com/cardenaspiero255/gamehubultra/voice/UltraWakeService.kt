@@ -60,6 +60,7 @@ class UltraWakeService : Service() {
         const val ACTION_STOP = "com.cardenaspiero255.gamehubultra.voice.STOP"
         private const val RESTART_DELAY_MS = 180L
         private const val WAKE_DEBOUNCE_MS = 700L
+        private const val SPEECH_INTERRUPT_LISTEN_DELAY_MS = 280L
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -90,6 +91,13 @@ class UltraWakeService : Service() {
         GameHubProductionComposition.aliasRepository(applicationContext)
     }
     private val restartRecognition = Runnable { startRecognition() }
+    private val listenDuringSpeech = Runnable {
+        if (!stopped && playbackGuard.isPlaybackActive() &&
+            commandCoordinator.isCommandRunning() && !persistentSessionActive
+        ) {
+            startRecognition(interruptionOnly = true)
+        }
+    }
     // A new generation is bound to every listening attempt. Late callbacks from
     // destroyed/replaced recognizers must not mutate the current session.
     private var recognitionGeneration = 0L
@@ -144,6 +152,7 @@ class UltraWakeService : Service() {
         if (pending != null && waitingForSpeechEngine) {
             waitingForSpeechEngine = false
             speechPlayback.speak(pending)
+            scheduleSpeechInterruptionListener()
         } else if (!ready && waitingForSpeechEngine) {
             // No TTS is available. Complete this turn so wake recognition
             // never remains stuck waiting for a speech callback.
@@ -171,9 +180,15 @@ class UltraWakeService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun startRecognition() {
+    private fun startRecognition(interruptionOnly: Boolean = false) {
         if (stopped || recognitionStarting) return
-        if (!commandCoordinator.tryStartRecognition()) return
+        val interruptWindow = interruptionOnly && playbackGuard.isPlaybackActive()
+        if (interruptionOnly && !interruptWindow) return
+        if (interruptWindow) {
+            if (!commandCoordinator.tryStartSpeechInterruptionRecognition()) return
+        } else if (!commandCoordinator.tryStartRecognition()) {
+            return
+        }
 
         if (
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
@@ -191,7 +206,14 @@ class UltraWakeService : Service() {
         }
 
         recognitionStarting = true
-        var requestedMode = sessionPolicy.preferredMode()
+        // A bounded legacy recognizer can listen for "Ultra, para" while
+        // TTS is active if Android grants the mic. Persistent mode remains
+        // reserved for the normal continuous-listening session.
+        var requestedMode = if (interruptWindow) {
+            UltraWakeRecognitionMode.LEGACY_RESTARTING
+        } else {
+            sessionPolicy.preferredMode()
+        }
         val started = runCatching {
             val speech = recognizer ?: SpeechRecognizer.createSpeechRecognizer(this).also {
                 recognizer = it
@@ -250,7 +272,21 @@ class UltraWakeService : Service() {
         override fun onRmsChanged(rmsdB: Float) = Unit
         override fun onBufferReceived(buffer: ByteArray?) = Unit
         override fun onEndOfSpeech() = Unit
-        override fun onPartialResults(partialResults: Bundle?) = Unit
+        override fun onPartialResults(partialResults: Bundle?) {
+            val alternatives = partialResults
+                ?.getStringArrayList(RESULTS_RECOGNITION)
+                .orEmpty()
+            if (UltraWakePartialStopPolicy.shouldStop(
+                    playbackActive = playbackGuard.isPlaybackActive(),
+                    alternatives = alternatives
+                )
+            ) {
+                if (cancelPendingSpeechAndResume()) return
+                stopActiveUltraSpeech(speechPlayback::stop, speechGeneration::activeToken) {
+                    finishCommandAndResume(it, playbackEnded = true)
+                }
+            }
+        }
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
         override fun onSegmentResults(segmentResults: Bundle) {
@@ -319,6 +355,10 @@ class UltraWakeService : Service() {
             // Non-actionable callbacks are delegated to the existing no-op handler.
             // Every callback that changes recovery or session state is guarded below.
             private fun isCurrent() = generation == recognitionGeneration && !stopped
+
+            override fun onPartialResults(partialResults: Bundle?) {
+                if (isCurrent()) listener.onPartialResults(partialResults)
+            }
 
             override fun onSegmentResults(segmentResults: Bundle) {
                 if (isCurrent()) listener.onSegmentResults(segmentResults)
@@ -472,10 +512,25 @@ class UltraWakeService : Service() {
     private fun speakAndResume(response: String) {
         val readyText = speechInitGate.offer(response)
         when {
-            readyText != null -> speechPlayback.speak(readyText)
+            readyText != null -> {
+                speechPlayback.speak(readyText)
+                scheduleSpeechInterruptionListener()
+            }
             speechEngineFailed -> speechPlayback.speak("")
             response.isNotBlank() -> waitingForSpeechEngine = true
             else -> speechPlayback.speak("")
+        }
+    }
+
+    private fun scheduleSpeechInterruptionListener() {
+        // This is best-effort on Android SpeechRecognizer: some OEMs do not
+        // permit input while TextToSpeech is speaking. It is only enabled after
+        // explicit consent to continuous listening and while TTS is active.
+        mainHandler.removeCallbacks(listenDuringSpeech)
+        if (playbackGuard.isPlaybackActive() && !persistentSessionActive) {
+            mainHandler.postDelayed(
+                listenDuringSpeech, SPEECH_INTERRUPT_LISTEN_DELAY_MS
+            )
         }
     }
 
@@ -497,6 +552,7 @@ class UltraWakeService : Service() {
         playbackEnded: Boolean
     ) {
         if (!speechGeneration.complete(token)) return
+        mainHandler.removeCallbacks(listenDuringSpeech)
         if (playbackEnded) {
             playbackGuard.onPlaybackFinished(System.currentTimeMillis())
         }
