@@ -10204,3 +10204,132 @@ Deno.test(
     }
   },
 );
+
+Deno.test(
+  "live Bitcoin spot uses two independent public USD quotes, not retail prices",
+  async () => {
+    const urls: string[] = [];
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        urls.push(url.toString());
+        if (url.hostname === "api.coinbase.com") {
+          return jsonResponse({
+            data: { amount: "105000.00", currency: "USD", base: "BTC" },
+          });
+        }
+        if (url.hostname === "api.kraken.com") {
+          return jsonResponse({
+            error: [],
+            result: {
+              XXBTZUSD: { c: ["105100.00", "0.02"] },
+            },
+          });
+        }
+        throw new Error("Unknown market provider: " + url);
+      },
+      env: () => undefined,
+    };
+    const result = await routeResearchQuery(
+      "Ultra, ¿cuánto vale Bitcoin ahora?",
+      deps,
+      "",
+      "CURRENT_DATA",
+      "REQUIRED",
+    );
+    if (
+      result.abstained ||
+      result.independentSourceCount !== 2 ||
+      result.sourceIds?.length !== 2 ||
+      !(result.displayText ?? "").includes("USD") ||
+      !(result.displayText ?? "").includes("105")
+    ) {
+      throw new Error("Bitcoin requires two corroborating USD sources");
+    }
+    if (
+      !urls.some((value) => value.includes("api.coinbase.com")) ||
+      !urls.some((value) => value.includes("api.kraken.com")) ||
+      urls.some((value) => value.includes("mercadolibre.com"))
+    ) {
+      throw new Error("Crypto quotes must never be routed to retail listings");
+    }
+  },
+);
+
+Deno.test(
+  "Bitcoin spot fails closed on provider error, implausible quote, or disagreement",
+  async () => {
+    for (const scenario of ["missing", "mismatch", "invalid"] as const) {
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (url.hostname === "api.coinbase.com") {
+            return jsonResponse({
+              data: {
+                amount: scenario === "invalid" ? "-4" : "105000.00",
+                currency: "USD",
+                base: "BTC",
+              },
+            });
+          }
+          if (url.hostname === "api.kraken.com") {
+            if (scenario === "missing") {
+              return jsonResponse({ error: ["service unavailable"] }, 503);
+            }
+            return jsonResponse({
+              error: [],
+              result: {
+                XXBTZUSD: {
+                  c: [scenario === "mismatch" ? "92000.00" : "105100.00", "0.1"],
+                },
+              },
+            });
+          }
+          throw new Error("Unexpected provider: " + url);
+        },
+        env: () => undefined,
+      };
+      const result = await routeResearchQuery(
+        "¿Cuál es el precio de Bitcoin ahora?",
+        deps,
+        "",
+        "CURRENT_DATA",
+        "REQUIRED",
+      );
+      if (!result.abstained || (result.displayText ?? "").includes("105000")) {
+        throw new Error("Bitcoin " + scenario + " must abstain");
+      }
+    }
+  },
+);
+
+Deno.test(
+  "Bitcoin concept questions never trigger cryptocurrency price fetches",
+  async () => {
+    let marketCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "api.coinbase.com" ||
+          url.hostname === "api.kraken.com"
+        ) {
+          marketCalls++;
+          throw new Error("A stable definition is not a live quote");
+        }
+        return jsonResponse({ query: { pages: {} } });
+      },
+      env: () => undefined,
+    };
+    await routeResearchQuery(
+      "¿Qué es Bitcoin?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+      "OPTIONAL",
+    );
+    if (marketCalls !== 0) {
+      throw new Error("Definitions must not open exchange tickers");
+    }
+  },
+);
