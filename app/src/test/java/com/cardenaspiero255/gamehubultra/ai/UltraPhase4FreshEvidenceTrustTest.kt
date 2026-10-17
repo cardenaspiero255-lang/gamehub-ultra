@@ -137,4 +137,57 @@ class UltraPhase4FreshEvidenceTrustTest {
             engine.close()
         }
     }
+
+    @Test
+    fun claimedTwoIndependentSourcesWithoutTwoTraceableIdsMustNotPass() {
+        val inflated = object : UltraResearchProvider {
+            override val id = "aggregator"
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "bitcoin:price",
+                    value = "100000",
+                    displayText = "Precio estimado: 100000",
+                    sourceId = "https://one.example/quote",
+                    independentSourceCount = 2,
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(inflated))
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, compara los precios actuales de Bitcoin vs Ethereum")
+            )
+            assertTrue(result.abstained)
+            assertEquals("INSUFFICIENT_CORROBORATION", result.reasonCode)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun oneAggregatorWithTwoTraceableIndependentReferencesCanPass() {
+        val aggregator = object : UltraResearchProvider {
+            override val id = "aggregator"
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "bitcoin:price",
+                    value = "100000",
+                    displayText = "Precio estimado: 100000",
+                    sourceId = "https://one.example/quote",
+                    supportingSourceIds = listOf("https://two.example/quote"),
+                    independentSourceCount = 2,
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(aggregator))
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, compara los precios actuales de Bitcoin vs Ethereum")
+            )
+            assertFalse(result.abstained)
+            assertEquals(2, result.independentSourceCount)
+        } finally {
+            engine.close()
+        }
+    }
 }
