@@ -26,6 +26,17 @@ object NetworkVoiceResponseText {
                     append(formatNumber(it))
                     append("%")
                 } ?: append(", pérdida de paquetes todavía no medida")
+                result.snapshot.diagnostics?.let { diagnostic ->
+                    if (diagnostic.metrics.spikeCount > 0) {
+                        append(", picos de latencia: ")
+                        append(diagnostic.metrics.spikeCount)
+                    }
+                    if (diagnostic.transportChanges.isNotEmpty() ||
+                        diagnostic.networkHandleChangeCount > 0
+                    ) {
+                        append(", cambios de conectividad detectados")
+                    }
+                }
                 append(". Perfil recomendado: ")
                 append(profileLabel(result.snapshot.recommendedProfile))
                 append(".")

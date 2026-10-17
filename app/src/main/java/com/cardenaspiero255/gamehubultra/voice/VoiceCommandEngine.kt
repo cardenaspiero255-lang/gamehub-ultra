@@ -268,7 +268,12 @@ object VoiceCommandEngine :
 
             is VoiceCommand.Network -> {
                 val snapshot = networkStatusProvider?.invoke()
-                if (snapshot == null) {
+                if (
+                    snapshot == null ||
+                    (command.request == NetworkVoiceRequest.OPTIMIZE &&
+                        snapshot.metrics.stability ==
+                        com.cardenaspiero255.gamehubultra.network.NetworkStability.OFFLINE)
+                ) {
                     VoiceActionResult.NotAvailable(
                         "No hay una conexión de red verificada disponible todavía."
                     )
