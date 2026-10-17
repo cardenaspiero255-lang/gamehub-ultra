@@ -146,6 +146,16 @@ internal object UltraWakeStopSpeakingIntent {
 }
 
 
+/**
+ * Partial ASR must only be allowed to interrupt a playing answer when an
+ * entire candidate is an explicit stop phrase. Long questions containing
+ * "para" and ordinary background speech must never be treated as STOP.
+ */
+internal object UltraWakePartialStopPolicy {
+    fun shouldStop(playbackActive: Boolean, alternatives: List<String>): Boolean =
+        playbackActive && alternatives.any(UltraWakeStopSpeakingIntent::matches)
+}
+
 internal fun stopActiveUltraSpeech(
     stopPlayback: () -> Unit,
     activeToken: () -> Long?,
