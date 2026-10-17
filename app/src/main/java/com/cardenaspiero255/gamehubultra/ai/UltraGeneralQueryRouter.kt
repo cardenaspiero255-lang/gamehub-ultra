@@ -165,7 +165,12 @@ object UltraGeneralQueryRouter {
                     transcript = transcript,
                     kind = UltraGeneralQueryKind.COMPARISON_RESEARCH,
                     verificationMode = UltraVerificationMode.REQUIRED,
-                    requiresFreshData = currentDataPattern.containsMatchIn(clean),
+                    // Comparisons explicitly asking for current information must
+                    // never reuse long-lived, stable-knowledge evidence.
+                    requiresFreshData = currentDataPattern.containsMatchIn(clean) ||
+                        currentQualifierPattern.containsMatchIn(clean) ||
+                        explicitMarketValuePattern.containsMatchIn(clean) ||
+                        explicitCostQuestionPattern.containsMatchIn(clean),
                     timeoutMillis = RESEARCH_TIMEOUT_MS
                 )
 
