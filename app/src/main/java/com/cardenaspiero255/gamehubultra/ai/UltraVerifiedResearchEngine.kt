@@ -675,6 +675,38 @@ class UltraVerifiedResearchEngine(
             }
         }
 
+        // A current quote must not silently choose a more highly ranked value
+        // while another independent provider reports a different value for
+        // the same claim. The majority alone does not establish freshness.
+        val freshMarketOrComparison =
+            request.requiresFreshData &&
+                (request.kind == UltraGeneralQueryKind.CURRENT_DATA ||
+                    request.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH)
+        if (freshMarketOrComparison) {
+            val conflictingValues = evidenceAttempts
+                .groupBy { (_, evidence) ->
+                    evidence.claimKey.trim().lowercase(Locale.ROOT)
+                }
+                .values.any { observations ->
+                    observations.map { (_, evidence) ->
+                        evidence.value.trim()
+                            .lowercase(Locale.ROOT)
+                            .replace(Regex("""\s+"""), " ")
+                    }.distinct().size > 1
+                }
+            if (conflictingValues) {
+                return abstention(
+                    timedOut = timedOut,
+                    fallbackUsed = fallbackUsed,
+                    sources = evidenceAttempts
+                        .flatMap { (_, evidence) -> evidence.allSourceIds() }
+                        .distinct(),
+                    reasonCode = "CONFLICTING_EVIDENCE",
+                    retryable = activeProviders.size < partitionedProviderCount(request)
+                )
+            }
+        }
+
         val consensus = consensusEngine.decide(
             evidenceAttempts.map { (attempt, evidence) ->
                 UltraWeightedEvidenceCandidate(
@@ -734,6 +766,8 @@ class UltraVerifiedResearchEngine(
         val winnerHasAuthoritativeEvidence =
             consensus.evidence.any { it.authoritative }
         val minimumRequiredSources = when {
+            request.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH &&
+                request.requiresFreshData -> 2
             winnerHasAuthoritativeEvidence -> 1
             request.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH -> 2
             requiredGeneralKnowledge -> 2
@@ -825,6 +859,8 @@ class UltraVerifiedResearchEngine(
                     "Las fuentes disponibles están temporalmente en recuperación tras fallos repetidos. Inténtalo de nuevo en unos segundos."
                 reasonCode == "PROVIDER_PARTITION_EMPTY" ->
                     "No quedan fuentes independientes en esta rama de investigación."
+                reasonCode == "CONFLICTING_EVIDENCE" ->
+                    "Las fuentes entregan datos contradictorios para esta consulta actual. No puedo confirmar la cifra con seguridad."
                 sources.isEmpty() ->
                     "No encontré fuentes suficientes para confirmar ese dato."
                 else ->
