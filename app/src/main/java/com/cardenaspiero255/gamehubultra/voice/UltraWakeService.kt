@@ -61,6 +61,7 @@ class UltraWakeService : Service() {
         private const val RESTART_DELAY_MS = 180L
         private const val WAKE_DEBOUNCE_MS = 700L
         private const val SPEECH_INTERRUPT_LISTEN_DELAY_MS = 280L
+        private const val MAX_SPEECH_INTERRUPT_RETRIES = 3
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -71,6 +72,7 @@ class UltraWakeService : Service() {
     private val speechGeneration = UltraWakeSpeechGeneration()
     private val playbackGuard = UltraWakePlaybackGuard()
     private val speechInitGate = UltraTtsInitializationGate()
+    private var speechInterruptionRetryCount = 0
     private var waitingForSpeechEngine = false
     private var speechEngineFailed = false
     private val repeatGate = UltraWakeRepeatGate()
@@ -381,6 +383,16 @@ class UltraWakeService : Service() {
             override fun onResults(results: Bundle?) {
                 if (!isCurrent()) return
                 if (interruptionOnly) {
+                    // Some recognizers provide stop words only in final results.
+                    // Forward stop intent to the safe partial-stop handler, not command routing.
+                    val alternatives = results?.getStringArrayList(RESULTS_RECOGNITION).orEmpty()
+                    if (UltraWakePartialStopPolicy.shouldStop(
+                            playbackActive = playbackGuard.isPlaybackActive(),
+                            alternatives = alternatives
+                        )
+                    ) {
+                        listener.onPartialResults(results)
+                    }
                     commandCoordinator.onRecognitionFinished()
                     return
                 }
@@ -391,7 +403,15 @@ class UltraWakeService : Service() {
                 if (!isCurrent()) return
                 if (interruptionOnly) {
                     commandCoordinator.onRecognitionFinished()
-                    if (playbackGuard.isPlaybackActive()) scheduleSpeechInterruptionListener()
+                    speechInterruptionRetryCount++
+                    if (speechInterruptionRetryCount < MAX_SPEECH_INTERRUPT_RETRIES &&
+                        playbackGuard.isPlaybackActive()
+                    ) {
+                        scheduleSpeechInterruptionListener(
+                            SPEECH_INTERRUPT_LISTEN_DELAY_MS *
+                                (1L shl speechInterruptionRetryCount)
+                        )
+                    }
                     return
                 }
                 listener.onError(error)
@@ -531,6 +551,7 @@ class UltraWakeService : Service() {
     }
 
     private fun speakAndResume(response: String) {
+        speechInterruptionRetryCount = 0
         val readyText = speechInitGate.offer(response)
         when {
             readyText != null -> {
@@ -543,15 +564,17 @@ class UltraWakeService : Service() {
         }
     }
 
-    private fun scheduleSpeechInterruptionListener() {
+    private fun scheduleSpeechInterruptionListener(
+        delayMillis: Long = SPEECH_INTERRUPT_LISTEN_DELAY_MS
+    ) {
         // This is best-effort on Android SpeechRecognizer: some OEMs do not
         // permit input while TextToSpeech is speaking. It is only enabled after
         // explicit consent to continuous listening and while TTS is active.
         mainHandler.removeCallbacks(listenDuringSpeech)
-        if (playbackGuard.isPlaybackActive() && !persistentSessionActive) {
-            mainHandler.postDelayed(
-                listenDuringSpeech, SPEECH_INTERRUPT_LISTEN_DELAY_MS
-            )
+        if (playbackGuard.isPlaybackActive() && !persistentSessionActive &&
+            speechInterruptionRetryCount < MAX_SPEECH_INTERRUPT_RETRIES
+        ) {
+            mainHandler.postDelayed(listenDuringSpeech, delayMillis)
         }
     }
 
@@ -576,6 +599,7 @@ class UltraWakeService : Service() {
         mainHandler.removeCallbacks(listenDuringSpeech)
         if (playbackEnded) {
             playbackGuard.onPlaybackFinished(System.currentTimeMillis())
+            speechInterruptionRetryCount = 0
         }
         if (commandCoordinator.isRecognitionActive() && !persistentSessionActive) {
             recognitionGeneration++
