@@ -88,20 +88,23 @@ internal class UltraWakeCommandRuntime(
             optionalResolver = intentResolver,
             knownGameAliases = aliasRepository.aliases().keys
         )
-        val route = when {
-            personalizedCommand != null -> UltraAgentRoute.Command(personalizedCommand)
-            contextualCommand !is VoiceCommand.Unknown -> UltraAgentRoute.Command(contextualCommand)
-            else -> UltraUnifiedAgentRouter.route(
+        val route = UltraWakeRoutePrecedencePolicy.route(
             transcript = transcript,
-            optionalResolver = intentResolver,
-            telemetry = UltraRuntimeTelemetry(
-                batteryPercent = status.batteryPercent,
-                thermalLabel = status.thermalLabel,
-                refreshRateHz = diagnostics.refresh.currentRefreshRateHz
-            ),
-            knownGameAliases = aliasRepository.aliases().keys,
+            personalizedCommand = personalizedCommand,
+            contextualCommand = contextualCommand,
             conversationHistory = conversationBefore
-        )
+        ) {
+            UltraUnifiedAgentRouter.route(
+                transcript = transcript,
+                optionalResolver = intentResolver,
+                telemetry = UltraRuntimeTelemetry(
+                    batteryPercent = status.batteryPercent,
+                    thermalLabel = status.thermalLabel,
+                    refreshRateHz = diagnostics.refresh.currentRefreshRateHz
+                ),
+                knownGameAliases = aliasRepository.aliases().keys,
+                conversationHistory = conversationBefore
+            )
         }
 
         return when (route) {
