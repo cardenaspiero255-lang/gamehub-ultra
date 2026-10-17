@@ -359,4 +359,28 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
 
+
+    @Test
+    fun phase4ElectricCurrentInScientificComparisonsIsNotTemporal() {
+        val stable = listOf(
+            "Ultra, compare alternating current vs direct current",
+            "Ultra, compare electric current vs voltage",
+            "Ultra, compare current density vs current flow"
+        )
+        stable.forEach { query ->
+            val request = UltraGeneralQueryRouter.classify(query)
+            assertEquals(UltraGeneralQueryKind.COMPARISON_RESEARCH, request.kind, query)
+            assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode, query)
+            assertFalse(request.requiresFreshData, query)
+        }
+    }
+
+    @Test
+    fun phase4RealTemporalModifiersStillRequireFreshComparison() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, compare alternating current vs direct current today"
+        )
+        assertEquals(UltraGeneralQueryKind.COMPARISON_RESEARCH, request.kind)
+        assertTrue(request.requiresFreshData)
+    }
 }
