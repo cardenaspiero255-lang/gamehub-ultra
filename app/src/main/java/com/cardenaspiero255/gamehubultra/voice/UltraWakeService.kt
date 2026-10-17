@@ -180,7 +180,11 @@ class UltraWakeService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun startRecognition(interruptionOnly: Boolean = false) {
+    // Preserve the no-argument entry point used by the existing Robolectric
+    // recovery tests and ordinary service restart callbacks.
+    private fun startRecognition() = startRecognition(interruptionOnly = false)
+
+    private fun startRecognition(interruptionOnly: Boolean) {
         if (stopped || recognitionStarting) return
         val interruptWindow = interruptionOnly && playbackGuard.isPlaybackActive()
         if (interruptionOnly && !interruptWindow) return
