@@ -149,4 +149,60 @@ class UltraWakeSpeechInterruptionRobolectricTest {
             controller.destroy()
         }
     }
+
+    @Test
+    fun completedSpeechReleasesInFlightInterruptionRecognition() {
+        val service = UltraWakeService()
+        val guard: UltraWakePlaybackGuard = field(service, "playbackGuard")
+        val generation: UltraWakeSpeechGeneration = field(service, "speechGeneration")
+        val coordinator: UltraWakeCommandCoordinator = field(service, "commandCoordinator")
+        assertTrue(coordinator.tryBeginCommand())
+        val token = generation.begin()
+        guard.onPlaybackStarted("La respuesta ha terminado.")
+        assertTrue(coordinator.tryStartSpeechInterruptionRecognition())
+        UltraWakeService::class.java.getDeclaredField("recognitionGeneration")
+            .apply { isAccessible = true }
+            .setLong(service, 7L)
+
+        UltraWakeService::class.java.getDeclaredMethod(
+            "finishCommandAndResume",
+            Long::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType
+        ).apply { isAccessible = true }.invoke(service, token, true)
+
+        assertFalse(coordinator.isRecognitionActive())
+        assertFalse(coordinator.isCommandRunning())
+        val currentGeneration: Long = field(service, "recognitionGeneration")
+        assertTrue(currentGeneration > 7L, "Old ASR callbacks must be retired")
+        assertTrue(coordinator.tryStartRecognition(), "Mic must be available for next wake")
+    }
+
+    @Test
+    fun interruptionOnlyFinalResultCannotQueueAnExecutableProfileCommand() {
+        val service = UltraWakeService()
+        val guard: UltraWakePlaybackGuard = field(service, "playbackGuard")
+        val generation: UltraWakeSpeechGeneration = field(service, "speechGeneration")
+        val coordinator: UltraWakeCommandCoordinator = field(service, "commandCoordinator")
+        val queue: UltraWakeCommandQueue = field(service, "commandQueue")
+        assertTrue(coordinator.tryBeginCommand())
+        val token = generation.begin()
+        guard.onPlaybackStarted("Una explicación de procesadores, sin instrucciones X4.")
+        assertTrue(coordinator.tryStartSpeechInterruptionRecognition())
+        UltraWakeService::class.java.getDeclaredField("recognitionGeneration")
+            .apply { isAccessible = true }
+            .setLong(service, 11L)
+        val method = UltraWakeService::class.java.getDeclaredMethod(
+            "listenerForGeneration",
+            Long::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType
+        ).apply { isAccessible = true }
+        val interruptListener = method.invoke(service, 11L, true) as RecognitionListener
+
+        interruptListener.onResults(bundle("Ultra, activa X4"))
+
+        assertTrue(generation.isActive(token), "TTS should continue")
+        assertTrue(coordinator.isCommandRunning(), "Current answer should not be replaced")
+        assertTrue(queue.poll() == null, "Interrupt-only ASR must never queue actions")
+        assertFalse(coordinator.isRecognitionActive())
+    }
 }
