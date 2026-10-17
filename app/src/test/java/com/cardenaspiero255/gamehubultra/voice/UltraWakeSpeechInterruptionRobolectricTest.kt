@@ -209,6 +209,11 @@ class UltraWakeSpeechInterruptionRobolectricTest {
         val coordinator: UltraWakeCommandCoordinator = field(service, "commandCoordinator")
         assertTrue(coordinator.tryBeginCommand())
         guard.onPlaybackStarted("Respuesta larga.")
+        // Verify the actual scheduling calls rather than relying on a
+        // Robolectric Scheduler method unavailable under the current looper mode.
+        val handler = Mockito.mock(android.os.Handler::class.java)
+        UltraWakeService::class.java.getDeclaredField("mainHandler")
+            .apply { isAccessible = true }.set(service, handler)
         val method = UltraWakeService::class.java.getDeclaredMethod(
             "listenerForGeneration",
             Long::class.javaPrimitiveType,
@@ -228,10 +233,19 @@ class UltraWakeSpeechInterruptionRobolectricTest {
             "scheduleSpeechInterruptionListener"
         ).apply { isAccessible = true }
         schedule.invoke(service)
-        val handler: android.os.Handler = field(service, "mainHandler")
-        assertFalse(
-            Shadows.shadowOf(handler.looper).scheduler.areAnyRunnable(),
-            "Exhausted budget must not schedule more interruption attempts"
+        // Errors 1 and 2 each schedule one backed-off retry. Error 3 and
+        // subsequent scheduling calls must not enqueue any new listening attempt.
+        Mockito.verify(handler).postDelayed(
+            Mockito.any(Runnable::class.java),
+            Mockito.eq(560L)
+        )
+        Mockito.verify(handler).postDelayed(
+            Mockito.any(Runnable::class.java),
+            Mockito.eq(1120L)
+        )
+        Mockito.verify(handler, Mockito.times(2)).postDelayed(
+            Mockito.any(Runnable::class.java),
+            Mockito.anyLong()
         )
     }
 
