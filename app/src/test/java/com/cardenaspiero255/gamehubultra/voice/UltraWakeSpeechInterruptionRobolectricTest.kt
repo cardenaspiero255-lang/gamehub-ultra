@@ -214,7 +214,7 @@ class UltraWakeSpeechInterruptionRobolectricTest {
             Long::class.javaPrimitiveType,
             Boolean::class.javaPrimitiveType
         ).apply { isAccessible = true }
-        for (attempt in 1..6) {
+        for (attempt in 1..3) {
             assertTrue(coordinator.tryStartSpeechInterruptionRecognition())
             UltraWakeService::class.java.getDeclaredField("recognitionGeneration")
                 .apply { isAccessible = true }.setLong(service, attempt.toLong())
@@ -223,7 +223,16 @@ class UltraWakeSpeechInterruptionRobolectricTest {
             assertFalse(coordinator.isRecognitionActive())
         }
         val retries: Int = field(service, "speechInterruptionRetryCount")
-        assertTrue(retries <= 3, "Interruption retries must be bounded")
+        assertTrue(retries == 3, "Retry budget must be exhausted")
+        val schedule = UltraWakeService::class.java.getDeclaredMethod(
+            "scheduleSpeechInterruptionListener"
+        ).apply { isAccessible = true }
+        schedule.invoke(service)
+        val handler: android.os.Handler = field(service, "mainHandler")
+        assertFalse(
+            Shadows.shadowOf(handler.looper).scheduler.areAnyRunnable(),
+            "Exhausted budget must not schedule more interruption attempts"
+        )
     }
 
     @Test
