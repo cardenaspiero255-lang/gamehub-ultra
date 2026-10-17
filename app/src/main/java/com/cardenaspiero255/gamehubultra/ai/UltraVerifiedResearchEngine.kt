@@ -756,8 +756,24 @@ class UltraVerifiedResearchEngine(
         val sources = consensus.evidence
             .flatMap { it.sourceIds }
             .distinct()
-        val corroborationCount =
+        // Fresh comparisons need as many *traceable* references as the
+        // provider claims to have checked. Do not upgrade one published URL
+        // to two independent sources based on self-reported metadata alone.
+        val corroborationCount = if (
+            request.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH &&
+            request.requiresFreshData
+        ) {
+            minOf(
+                consensus.independentSourceCount.coerceAtLeast(1),
+                sources.asSequence()
+                    .map { it.trim().lowercase(Locale.ROOT) }
+                    .filter(String::isNotBlank)
+                    .distinct()
+                    .count()
+            )
+        } else {
             consensus.independentSourceCount.coerceAtLeast(1)
+        }
         val confidence = consensus.confidence
 
         val requiredGeneralKnowledge =
