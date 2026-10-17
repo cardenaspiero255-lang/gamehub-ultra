@@ -564,9 +564,11 @@ class UltraWakeService : Service() {
         }
     }
 
-    private fun scheduleSpeechInterruptionListener(
-        delayMillis: Long = SPEECH_INTERRUPT_LISTEN_DELAY_MS
-    ) {
+    // Keep the no-argument entry point for existing callers and Robolectric tests.
+    private fun scheduleSpeechInterruptionListener() =
+        scheduleSpeechInterruptionListener(SPEECH_INTERRUPT_LISTEN_DELAY_MS)
+
+    private fun scheduleSpeechInterruptionListener(delayMillis: Long) {
         // This is best-effort on Android SpeechRecognizer: some OEMs do not
         // permit input while TextToSpeech is speaking. It is only enabled after
         // explicit consent to continuous listening and while TTS is active.
