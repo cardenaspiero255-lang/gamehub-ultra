@@ -223,7 +223,7 @@ class UltraWakeService : Service() {
                 recognizer = it
             }
             val sessionGeneration = ++recognitionGeneration
-            speech.setRecognitionListener(listenerForGeneration(sessionGeneration))
+            speech.setRecognitionListener(listenerForGeneration(sessionGeneration, interruptWindow))
 
             if (requestedMode == UltraWakeRecognitionMode.PERSISTENT_SEGMENTED) {
                 val source = UltraPersistentSpeechSource.create()
@@ -355,6 +355,12 @@ class UltraWakeService : Service() {
      * Bind each registration to its session generation, not the mutable recognizer field.
      */
     private fun listenerForGeneration(generation: Long): RecognitionListener =
+        listenerForGeneration(generation, interruptionOnly = false)
+
+    private fun listenerForGeneration(
+        generation: Long,
+        interruptionOnly: Boolean
+    ): RecognitionListener =
         object : RecognitionListener by listener {
             // Non-actionable callbacks are delegated to the existing no-op handler.
             // Every callback that changes recovery or session state is guarded below.
@@ -373,11 +379,22 @@ class UltraWakeService : Service() {
             }
 
             override fun onResults(results: Bundle?) {
-                if (isCurrent()) listener.onResults(results)
+                if (!isCurrent()) return
+                if (interruptionOnly) {
+                    commandCoordinator.onRecognitionFinished()
+                    return
+                }
+                listener.onResults(results)
             }
 
             override fun onError(error: Int) {
-                if (isCurrent()) listener.onError(error)
+                if (!isCurrent()) return
+                if (interruptionOnly) {
+                    commandCoordinator.onRecognitionFinished()
+                    if (playbackGuard.isPlaybackActive()) scheduleSpeechInterruptionListener()
+                    return
+                }
+                listener.onError(error)
             }
         }
 
@@ -559,6 +576,11 @@ class UltraWakeService : Service() {
         mainHandler.removeCallbacks(listenDuringSpeech)
         if (playbackEnded) {
             playbackGuard.onPlaybackFinished(System.currentTimeMillis())
+        }
+        if (commandCoordinator.isRecognitionActive() && !persistentSessionActive) {
+            recognitionGeneration++
+            runCatching { recognizer?.cancel() }
+            commandCoordinator.onRecognitionFinished()
         }
         if (!commandCoordinator.finishCommand()) return
 
