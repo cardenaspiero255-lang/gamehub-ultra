@@ -178,6 +178,55 @@ class UltraWakeSpeechInterruptionRobolectricTest {
     }
 
     @Test
+    fun interruptionOnlyFinalStopEndsSpeechWithoutQueueingActions() {
+        val service = UltraWakeService()
+        val guard: UltraWakePlaybackGuard = field(service, "playbackGuard")
+        val generation: UltraWakeSpeechGeneration = field(service, "speechGeneration")
+        val coordinator: UltraWakeCommandCoordinator = field(service, "commandCoordinator")
+        val queue: UltraWakeCommandQueue = field(service, "commandQueue")
+        assertTrue(coordinator.tryBeginCommand())
+        val token = generation.begin()
+        guard.onPlaybackStarted("Respuesta larga.")
+        assertTrue(coordinator.tryStartSpeechInterruptionRecognition())
+        UltraWakeService::class.java.getDeclaredField("recognitionGeneration")
+            .apply { isAccessible = true }.setLong(service, 17L)
+        val method = UltraWakeService::class.java.getDeclaredMethod(
+            "listenerForGeneration",
+            Long::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType
+        ).apply { isAccessible = true }
+        val interrupt = method.invoke(service, 17L, true) as RecognitionListener
+        interrupt.onResults(bundle("Ultra, para"))
+        assertFalse(generation.isActive(token))
+        assertFalse(coordinator.isCommandRunning())
+        assertTrue(queue.poll() == null)
+    }
+
+    @Test
+    fun repeatedInterruptionErrorsHaveBoundedRetries() {
+        val service = UltraWakeService()
+        val guard: UltraWakePlaybackGuard = field(service, "playbackGuard")
+        val coordinator: UltraWakeCommandCoordinator = field(service, "commandCoordinator")
+        assertTrue(coordinator.tryBeginCommand())
+        guard.onPlaybackStarted("Respuesta larga.")
+        val method = UltraWakeService::class.java.getDeclaredMethod(
+            "listenerForGeneration",
+            Long::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType
+        ).apply { isAccessible = true }
+        for (attempt in 1..6) {
+            assertTrue(coordinator.tryStartSpeechInterruptionRecognition())
+            UltraWakeService::class.java.getDeclaredField("recognitionGeneration")
+                .apply { isAccessible = true }.setLong(service, attempt.toLong())
+            val interrupt = method.invoke(service, attempt.toLong(), true) as RecognitionListener
+            interrupt.onError(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
+            assertFalse(coordinator.isRecognitionActive())
+        }
+        val retries: Int = field(service, "speechInterruptionRetryCount")
+        assertTrue(retries <= 3, "Interruption retries must be bounded")
+    }
+
+    @Test
     fun interruptionOnlyFinalResultCannotQueueAnExecutableProfileCommand() {
         val service = UltraWakeService()
         val guard: UltraWakePlaybackGuard = field(service, "playbackGuard")
