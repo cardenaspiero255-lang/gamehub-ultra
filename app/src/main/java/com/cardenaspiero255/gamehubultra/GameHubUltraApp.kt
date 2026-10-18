@@ -382,13 +382,13 @@ internal fun GameHubUltraApp(
             recordPerformanceEvent = viewModel::recordPerformanceEvent
         )
     }
-    var restorableUltraGamePackage by rememberSaveable {
+    var restorableUltraGamePackage by remember {
         mutableStateOf<String?>(null)
     }
-    var restorableUltraConversation by rememberSaveable {
+    var restorableUltraConversation by remember {
         mutableStateOf<List<String>?>(null)
     }
-    var restorableUltraHistoryHydrated by rememberSaveable {
+    var restorableUltraHistoryHydrated by remember {
         mutableStateOf<Boolean?>(null)
     }
     val ultraSessionController = remember(scope, ultraSessionMemory) {
