@@ -188,6 +188,33 @@ class UltraMemoryRepository(
         clearConversationHistory(UltraMemoryScope(userId = userId))
     }
 
+    /**
+     * Physically expires prior conversation turns in every game scope.
+     * Explicit facts remain until the user deletes them.
+     */
+    fun pruneExpiredConversations(retentionDays: Int): Int = synchronized(lock) {
+        require(retentionDays in UltraMemoryPrivacyPreferences.ALLOWED_RETENTION_DAYS)
+        val cutoff = nowMillis() - retentionDays.toLong() * 86_400_000L
+        val remaining = state.records.filter { record ->
+            record.kind != UltraMemoryKind.CONVERSATION ||
+                record.timestampMillis >= cutoff
+        }
+        val removed = state.records.size - remaining.size
+        if (removed > 0) persist(state.copy(records = remaining))
+        removed
+    }
+
+    /**
+     * Removes the encrypted memory payload itself rather than replacing it
+     * with an encoded empty history. In-memory records are invalidated too.
+     */
+    fun purgeAllData() {
+        synchronized(lock) {
+            persistence.clear()
+            state = UltraMemorySnapshot(enabled = false)
+        }
+    }
+
     fun exportSnapshot(): String = synchronized(lock) {
         UltraMemoryCodec.encode(state)
     }
