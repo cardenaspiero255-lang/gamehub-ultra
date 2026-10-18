@@ -21,7 +21,8 @@ object UltraMemoryTurnPersistencePolicy {
             is UltraMemoryCommand.Delete,
             is UltraMemoryCommand.Archive,
             UltraMemoryCommand.ClearHistory,
-            UltraMemoryCommand.ClearAll -> true
+            UltraMemoryCommand.ClearAll,
+            UltraMemoryCommand.Disable -> true
 
             else -> false
         }
