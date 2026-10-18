@@ -3,6 +3,7 @@ package com.cardenaspiero255.gamehubultra.ui.voice
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.cardenaspiero255.gamehubultra.UltraAssistantQueryRunner
@@ -56,7 +57,7 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         }
         Mockito.verify(store).clearConversationHistory(UltraMemoryScope(userId = "local"))
         rule.onNodeWithText("Borrar toda mi memoria").performClick()
-        rule.onNodeWithText("Cancelar").performClick()
+        rule.onNodeWithText("Cancelar").performSemanticsAction(SemanticsActions.OnClick)
         rule.onNodeWithText("Borrar toda mi memoria").performClick()
         rule.onNodeWithText("Borrar definitivamente").performClick()
         rule.waitUntil(10000) {
@@ -76,10 +77,8 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         rule.waitUntil(10000) {
             rule.onAllNodesWithText("Memoria privada de Ultra").fetchSemanticsNodes().isNotEmpty()
         }
-        rule.waitUntil(10000) {
-            rule.onNodeWithTag("ultra-memory-consent-toggle")
-                .fetchSemanticsNode().config[SemanticsProperties.ToggleableState] == ToggleableState.On
-        }
+        // Dialog opens only after the opted-in preference has been loaded.
+        rule.onNodeWithTag("ultra-memory-consent-toggle").assertIsOn()
         rule.onNodeWithTag("ultra-memory-consent-toggle").performClick()
         rule.waitUntil(10000) {
             rule.onAllNodesWithText("Memoria desactivada; las conversaciones guardadas no se consultarán.").fetchSemanticsNodes().isNotEmpty()
