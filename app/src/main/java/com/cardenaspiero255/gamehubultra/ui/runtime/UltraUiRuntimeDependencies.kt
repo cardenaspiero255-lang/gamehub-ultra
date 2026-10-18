@@ -3,6 +3,8 @@ package com.cardenaspiero255.gamehubultra.ui.runtime
 import com.cardenaspiero255.gamehubultra.UltraAssistantSessionMemory
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoutingGateway
 import com.cardenaspiero255.gamehubultra.ai.UltraAssistantGateway
+import com.cardenaspiero255.gamehubultra.ai.UltraMemoryPrivacyGateway
+import com.cardenaspiero255.gamehubultra.ai.UnavailableUltraMemoryPrivacyGateway
 import com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingGateway
 import com.cardenaspiero255.gamehubultra.ai.UltraQueryExecutor
 import com.cardenaspiero255.gamehubultra.data.GameAliasStateRepository
@@ -13,5 +15,6 @@ internal data class UltraUiRuntimeDependencies(
     val sessionMemory: UltraAssistantSessionMemory,
     val agentRouter: UltraAgentRoutingGateway,
     val networkGaming: UltraNetworkGamingGateway,
-    val aliasRepository: GameAliasStateRepository
+    val aliasRepository: GameAliasStateRepository,
+    val memoryPrivacy: UltraMemoryPrivacyGateway = UnavailableUltraMemoryPrivacyGateway
 )
