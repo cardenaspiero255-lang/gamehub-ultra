@@ -57,7 +57,10 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         }
         Mockito.verify(store).clearConversationHistory(UltraMemoryScope(userId = "local"))
         rule.onNodeWithText("Borrar toda mi memoria").performClick()
-        rule.onNodeWithText("Cancelar").performSemanticsAction(SemanticsActions.OnClick)
+        rule.waitUntil(10000) {
+            rule.onAllNodesWithTag("ultra-erase-cancel").fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithTag("ultra-erase-cancel").performSemanticsAction(SemanticsActions.OnClick)
         rule.onNodeWithText("Borrar toda mi memoria").performClick()
         rule.onNodeWithText("Borrar definitivamente").performClick()
         rule.waitUntil(10000) {

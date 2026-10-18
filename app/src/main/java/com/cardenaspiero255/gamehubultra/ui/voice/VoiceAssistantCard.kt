@@ -694,6 +694,7 @@ applyNetworkProfile = networkGaming::applyProfile
             dismissButton = {
                 if (showEraseMemoryConfirmation) {
                     TextButton(
+                        modifier = Modifier.testTag("ultra-erase-cancel"),
                         enabled = !memoryPrivacyBusy,
                         onClick = { showEraseMemoryConfirmation = false }
                     ) { Text("Cancelar") }
