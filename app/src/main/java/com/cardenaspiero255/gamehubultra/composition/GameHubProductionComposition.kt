@@ -110,6 +110,7 @@ internal object GameHubProductionComposition {
                 }
             ),
             sessionMemory = UltraConversationSessionMemoryAdapter(memoryStore),
+            memoryPrivacy = memoryStore,
             agentRouter = UltraAgentRoutingGateway { request ->
                 routeAgentRequest(request)
             },
