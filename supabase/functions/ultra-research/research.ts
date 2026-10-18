@@ -2781,6 +2781,126 @@ function extractPriceProduct(query: string): string {
     .trim();
 }
 
+/**
+ * Bitcoin is an exchange-traded asset, never a Mercado Libre listing.
+ * Quote both independent public exchanges and label this an indicative
+ * BTC/USD spot quote, not a guaranteed executable trade price.
+ */
+function isLiveBitcoinPriceQuestion(query: string): boolean {
+  const clean = normalize(stripAssistantInvocation(query));
+  if (
+    !/\b(?:bitcoin|btc)\b/.test(clean) ||
+    !/\b(?:precio|valor|cotizacion|cuanto vale|cuanto cuesta|a cuanto esta|price|worth|spot)\b/
+      .test(clean)
+  ) {
+    return false;
+  }
+  // Compound asset names are not BTC (BCH, BSV, wrapped BTC, ETFs).
+  if (
+    /\b(?:bitcoin\s+(?:cash|sv|gold|diamond|private|classic|etf|futures?|options?)|wrapped\s+bitcoin|wbtc|bch|bsv|btg|cbtc)\b/
+      .test(clean)
+  ) {
+    return false;
+  }
+  // Comparison, historical and mining-cost questions are not BTC/USD spot.
+  return !/\b(?:compara|comparar|comparacion|compare|comparison|versus|vs|historico|historica|historia|ayer|yesterday|pasado|past|minar|mineria|minado|mining|miner|produccion|production)\b/
+    .test(clean) &&
+    !/\b(?:19|20)\d{2}\b/.test(clean);
+}
+
+function unsupportedBitcoinSpotCurrency(query: string): boolean {
+  const clean = normalize(stripAssistantInvocation(query));
+  // Do not silently substitute USD when an explicit quote unit was requested.
+  return /\b(?:eur|euros?|clp|pesos?|gbp|libras?|jpy|yenes?|ars|mxn|brl|cad|aud|cny|yuanes?|usdt|usdc)\b/
+    .test(clean) ||
+    /\b(?:btc|bitcoin)\s*\/\s*(?!usd\b)[a-z]{3,5}\b/.test(clean);
+}
+
+async function liveBitcoinSpotEvidence(
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  const coinbaseUrl = "https://api.coinbase.com/v2/prices/BTC-USD/spot";
+  const krakenUrl = "https://api.kraken.com/0/public/Ticker?pair=xbtusd";
+  const [coinbase, kraken] = await Promise.all([
+    fetchJson(deps, coinbaseUrl, {
+      headers: { "User-Agent": USER_AGENT },
+    }),
+    fetchJson(deps, krakenUrl, {
+      headers: { "User-Agent": USER_AGENT },
+    }),
+  ]);
+
+  const coinbaseData = coinbase?.data && typeof coinbase.data === "object"
+    ? coinbase.data as JsonObject
+    : null;
+  const coinbaseAmount = stringValue(coinbaseData?.amount);
+  const coinbaseCurrency = stringValue(coinbaseData?.currency);
+  const coinbasePrice = coinbaseAmount === null ? NaN : Number(coinbaseAmount);
+
+  const errors = Array.isArray(kraken?.error) ? kraken.error : null;
+  const result = kraken?.result && typeof kraken.result === "object"
+    ? kraken.result as JsonObject
+    : null;
+  const krakenTicker = result?.XXBTZUSD && typeof result.XXBTZUSD === "object"
+    ? result.XXBTZUSD as JsonObject
+    : null;
+  const lastTrade = Array.isArray(krakenTicker?.c)
+    ? krakenTicker.c[0]
+    : null;
+  const krakenPrice = typeof lastTrade === "string" ||
+      typeof lastTrade === "number"
+    ? Number(lastTrade)
+    : NaN;
+
+  // Strict fail-closed: both exchanges must respond with positive BTC/USD
+  // quotations, no provider-reported errors, and meaningful agreement.
+  if (
+    !coinbase || !kraken ||
+    coinbaseCurrency !== "USD" ||
+    !Number.isFinite(coinbasePrice) || coinbasePrice <= 0 ||
+    !Number.isFinite(krakenPrice) || krakenPrice <= 0 ||
+    !errors || errors.length > 0
+  ) {
+    return abstain(
+      "No pude confirmar el precio actual de Bitcoin en dos mercados independientes.",
+      {
+        reasonCode: "BITCOIN_SPOT_SOURCES_UNAVAILABLE",
+        retryable: true,
+        stage: "bitcoin_spot",
+      },
+    );
+  }
+
+  const midpoint = (coinbasePrice + krakenPrice) / 2;
+  if (
+    !Number.isFinite(midpoint) ||
+    Math.abs(coinbasePrice - krakenPrice) / midpoint > 0.03
+  ) {
+    return abstain(
+      "Las cotizaciones de Bitcoin disponibles no coinciden lo suficiente para dar una cifra fiable.",
+      {
+        reasonCode: "BITCOIN_SPOT_DIVERGENT",
+        retryable: true,
+        stage: "bitcoin_spot",
+      },
+    );
+  }
+
+  const rounded = Math.round(midpoint);
+  const observedAt = new Date().toISOString();
+  return {
+    claimKey: "bitcoin:usd:spot:exchanges",
+    value: "USD:" + rounded,
+    displayText:
+      `Al consultar Coinbase y Kraken (${observedAt}), Bitcoin cotizaba aproximadamente a ${rounded} USD por BTC. Es una referencia orientativa: el mercado cambia continuamente y las operaciones pueden tener diferencias o comisiones.`,
+    sourceId: coinbaseUrl,
+    sourceIds: [coinbaseUrl, krakenUrl],
+    independentSourceCount: 2,
+    authoritative: true,
+    observedAt,
+  };
+}
+
 async function priceEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -6786,6 +6906,27 @@ export async function routeResearchQuery(
   const clean = normalize(query);
   const cleanContext = normalize(context);
   const combinedSignals = `${clean} ${cleanContext}`.trim();
+
+  // Current BTC spot needs a keyless market specialist; never send it to
+  // retail product listings or generic text synthesis. This branch runs
+  // before general-knowledge specialists to avoid needless latency.
+  if (
+    kind !== "COMPARISON_RESEARCH" &&
+    isLiveBitcoinPriceQuestion(query) &&
+    (kind === "CURRENT_DATA" || verificationMode === "REQUIRED")
+  ) {
+    if (unsupportedBitcoinSpotCurrency(query)) {
+      return abstain(
+        "Solo puedo corroborar cotizaciones BTC/USD. No tengo una cotización verificada en la moneda solicitada.",
+        {
+          reasonCode: "BITCOIN_SPOT_UNSUPPORTED_CURRENCY",
+          retryable: false,
+          stage: "bitcoin_spot",
+        },
+      );
+    }
+    return await liveBitcoinSpotEvidence(deps);
+  }
 
   const weatherSignal =
     /\b(?:clima|tiempo (?:de hoy|hoy|ahora|actual|en)|que tiempo hace|weather|llover|llovera|llueve|lluvias?|rain|raining|pronostico|forecast|que temperatura hace|temperatura (?:de hoy|actual|ahora|hoy|en)|temperature (?:now|today|in))\b/;
