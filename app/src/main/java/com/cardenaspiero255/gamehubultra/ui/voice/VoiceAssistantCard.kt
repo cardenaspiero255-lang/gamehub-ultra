@@ -551,7 +551,10 @@ applyNetworkProfile = networkGaming::applyProfile
             onDismissRequest = { if (!memoryPrivacyBusy) showMemoryPrivacy = false },
             title = { Text("Memoria privada de Ultra") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier.heightIn(max = 430.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Text(
                         "Desactivada por defecto. Solo se guardan conversaciones locales cifradas tras tu autorización. " +
                             "Cada juego conserva su propio contexto.",
