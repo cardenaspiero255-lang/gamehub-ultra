@@ -3,6 +3,7 @@ package com.cardenaspiero255.gamehubultra.ui.voice
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.cardenaspiero255.gamehubultra.UltraAssistantQueryRunner
 import com.cardenaspiero255.gamehubultra.UltraAssistantSessionMemory
@@ -52,9 +53,9 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         }
         Mockito.verify(store).clearConversationHistory(UltraMemoryScope(userId = "local"))
         rule.onNodeWithText("Borrar toda mi memoria").performClick()
-        rule.onNodeWithText("Cancelar").performClick()
+        rule.onNodeWithText("Cancelar").performScrollTo().performClick()
         rule.onNodeWithText("Borrar toda mi memoria").performClick()
-        rule.onNodeWithText("Borrar definitivamente").performClick()
+        rule.onNodeWithText("Borrar definitivamente").performScrollTo().performClick()
         rule.waitUntil(10000) {
             rule.onAllNodesWithText("Memoria cifrada eliminada y consentimiento revocado.").fetchSemanticsNodes().isNotEmpty()
         }
@@ -69,6 +70,10 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         val ui = dependencies(store)
         rule.setContent { DemoPrivacyCard(store, ui) }
         rule.onNodeWithText("Privacidad y memoria").performClick()
+        rule.waitUntil(10000) {
+            rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState))[1]
+                .fetchSemanticsNode().config[SemanticsProperties.ToggleableState] == ToggleableState.On
+        }
         rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState))[1].performClick()
         rule.waitUntil(10000) {
             rule.onAllNodesWithText("Memoria desactivada; las conversaciones guardadas no se consultarán.").fetchSemanticsNodes().isNotEmpty()
