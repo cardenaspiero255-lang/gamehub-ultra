@@ -2795,6 +2795,13 @@ function isLiveBitcoinPriceQuestion(query: string): boolean {
   ) {
     return false;
   }
+  // Compound asset names are not BTC (BCH, BSV, wrapped BTC, ETFs).
+  if (
+    /\b(?:bitcoin\s+(?:cash|sv|gold|diamond|private|classic|etf|futures?|options?)|wrapped\s+bitcoin|wbtc|bch|bsv|btg|cbtc)\b/
+      .test(clean)
+  ) {
+    return false;
+  }
   // Comparison, historical and mining-cost questions are not BTC/USD spot.
   return !/\b(?:compara|comparar|comparacion|compare|comparison|versus|vs|historico|historica|historia|ayer|yesterday|pasado|past|minar|mineria|minado|mining|miner|produccion|production)\b/
     .test(clean) &&
