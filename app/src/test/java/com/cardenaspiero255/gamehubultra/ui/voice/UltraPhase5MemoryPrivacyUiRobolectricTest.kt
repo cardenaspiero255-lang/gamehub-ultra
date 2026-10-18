@@ -32,7 +32,7 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         Mockito.`when`(store.isMemoryEnabled()).thenReturn(false)
         Mockito.`when`(store.conversationRetentionDays()).thenReturn(30)
         Mockito.`when`(store.setConversationRetentionDays(7)).thenReturn(true)
-        val ui = dependencies()
+        val ui = dependencies(store)
         rule.setContent { DemoPrivacyCard(store, ui) }
         rule.onNodeWithText("Privacidad y memoria").performClick()
         rule.onNodeWithText("Memoria privada de Ultra").assertExists()
@@ -66,7 +66,7 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         val store = Mockito.mock(UltraConversationMemoryStore::class.java)
         Mockito.`when`(store.isMemoryEnabled()).thenReturn(true)
         Mockito.`when`(store.conversationRetentionDays()).thenReturn(30)
-        val ui = dependencies()
+        val ui = dependencies(store)
         rule.setContent { DemoPrivacyCard(store, ui) }
         rule.onNodeWithText("Privacidad y memoria").performClick()
         rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState))[1].performClick()
@@ -105,18 +105,18 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
             queryRunner = runner,
             conversation = conversation,
             onConversationChanged = { conversation = it },
-            assistantInputEnabled = true,
-            memoryPrivacyStoreOverride = store
+            assistantInputEnabled = true
         )
     }
 
-    private fun dependencies() = UltraUiRuntimeDependencies(
+    private fun dependencies(store: UltraConversationMemoryStore) = UltraUiRuntimeDependencies(
         queryExecutor = Mockito.mock(UltraQueryExecutor::class.java),
         assistant = Mockito.mock(UltraAssistantGateway::class.java),
         sessionMemory = Mockito.mock(UltraAssistantSessionMemory::class.java),
         agentRouter = Mockito.mock(UltraAgentRoutingGateway::class.java),
         networkGaming = Mockito.mock(UltraNetworkGamingGateway::class.java),
-        aliasRepository = Mockito.mock(GameAliasStateRepository::class.java)
+        aliasRepository = Mockito.mock(GameAliasStateRepository::class.java),
+        memoryPrivacy = store
     )
 
     private fun context() = GameHubAiContext(
