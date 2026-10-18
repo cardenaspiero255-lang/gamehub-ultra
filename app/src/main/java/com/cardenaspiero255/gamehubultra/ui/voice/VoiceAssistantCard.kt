@@ -67,7 +67,8 @@ internal fun VoiceAssistantCard(
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
     assistantInputEnabled: Boolean,
-    startListeningRequest: Int = 0
+    startListeningRequest: Int = 0,
+    memoryPrivacyStoreOverride: com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore? = null
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -113,8 +114,8 @@ internal fun VoiceAssistantCard(
     var showEraseMemoryConfirmation by rememberSaveable { mutableStateOf(false) }
     var memoryPrivacyBusy by remember { mutableStateOf(false) }
     var memoryPrivacyNotice by remember { mutableStateOf<String?>(null) }
-    val privateMemoryStore = remember(context) {
-        GameHubProductionComposition.ultraConversationMemory(context)
+    val privateMemoryStore = remember(context, memoryPrivacyStoreOverride) {
+        memoryPrivacyStoreOverride ?: GameHubProductionComposition.ultraConversationMemory(context)
     }
     var memoryConsent by remember { mutableStateOf(false) }
     var memoryRetentionDays by remember { mutableIntStateOf(30) }
