@@ -39,6 +39,7 @@ class VoiceAssistantController(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val fallbackRetryGate = VoiceRecognitionRetryGate()
     private val speechInitGate = UltraTtsInitializationGate()
+    private val privacyRecognition = UltraRecognitionPrivacyGate()
     @Volatile private var released = false
     private val fallbackRetry = Runnable {
         if (released) return@Runnable
@@ -113,7 +114,7 @@ class VoiceAssistantController(
         recognizer?.destroy()
         val speech = SpeechRecognizer.createSpeechRecognizer(appContext)
         recognizer = speech
-        speech.setRecognitionListener(listener)
+        speech.setRecognitionListener(recognitionListener(privacyRecognition.start()))
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
                 RecognizerIntent.EXTRA_LANGUAGE_MODEL,
@@ -130,6 +131,7 @@ class VoiceAssistantController(
     }
 
     fun stopListening() {
+        privacyRecognition.stop()
         if (released) return
         mainHandler.removeCallbacks(fallbackRetry)
         fallbackRetryGate.reset()
@@ -159,6 +161,7 @@ class VoiceAssistantController(
     }
 
     fun release() {
+        privacyRecognition.stop()
         if (released) return
         released = true
         speechInitGate.close()
@@ -176,17 +179,20 @@ class VoiceAssistantController(
         runCatching { oldTts?.shutdown() }
     }
 
-    private val listener = object : RecognitionListener {
+    private fun recognitionListener(
+        token: UltraRecognitionPrivacyGate.Token
+    ): RecognitionListener = object : RecognitionListener {
+        private fun valid(): Boolean = !released && privacyRecognition.isCurrent(token)
         override fun onReadyForSpeech(params: Bundle?) = Unit
         override fun onBeginningOfSpeech() = Unit
         override fun onRmsChanged(rmsdB: Float) = Unit
         override fun onBufferReceived(buffer: ByteArray?) = Unit
         override fun onEndOfSpeech() {
-            if (!released) onListeningChanged(false)
+            if (valid()) onListeningChanged(false)
         }
 
         override fun onResults(results: Bundle?) {
-            if (released) return
+            if (!valid()) return
             onListeningChanged(false)
             val alternatives = results
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -201,7 +207,7 @@ class VoiceAssistantController(
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
-            if (released) return
+            if (!valid()) return
             VoicePartialTranscriptForwarder.forward(
                 partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION),
                 onPartialTranscript
@@ -210,7 +216,7 @@ class VoiceAssistantController(
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
         override fun onError(error: Int) {
-            if (released) return
+            if (!valid()) return
             val fallback = UltraSpeechLocalePolicy.fallbackRecognitionTag(
                 error = error,
                 currentTag = recognitionLanguageTag
