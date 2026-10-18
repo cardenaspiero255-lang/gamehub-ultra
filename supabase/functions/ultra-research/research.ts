@@ -2788,9 +2788,25 @@ function extractPriceProduct(query: string): string {
  */
 function isLiveBitcoinPriceQuestion(query: string): boolean {
   const clean = normalize(stripAssistantInvocation(query));
-  return /\b(?:bitcoin|btc)\b/.test(clean) &&
-    /\b(?:precio|valor|cotizacion|cuanto vale|cuanto cuesta|a cuanto esta|price|worth|spot)\b/
-      .test(clean);
+  if (
+    !/\b(?:bitcoin|btc)\b/.test(clean) ||
+    !/\b(?:precio|valor|cotizacion|cuanto vale|cuanto cuesta|a cuanto esta|price|worth|spot)\b/
+      .test(clean)
+  ) {
+    return false;
+  }
+  // Comparison, historical and mining-cost questions are not BTC/USD spot.
+  return !/\b(?:compara|comparar|comparacion|compare|comparison|versus|vs|historico|historica|historia|ayer|yesterday|pasado|past|minar|mineria|minado|mining|miner|produccion|production)\b/
+    .test(clean) &&
+    !/\b(?:19|20)\d{2}\b/.test(clean);
+}
+
+function unsupportedBitcoinSpotCurrency(query: string): boolean {
+  const clean = normalize(stripAssistantInvocation(query));
+  // Do not silently substitute USD when an explicit quote unit was requested.
+  return /\b(?:eur|euros?|clp|pesos?|gbp|libras?|jpy|yenes?|ars|mxn|brl|cad|aud|cny|yuanes?|usdt|usdc)\b/
+    .test(clean) ||
+    /\b(?:btc|bitcoin)\s*\/\s*(?!usd\b)[a-z]{3,5}\b/.test(clean);
 }
 
 async function liveBitcoinSpotEvidence(
@@ -6888,9 +6904,20 @@ export async function routeResearchQuery(
   // retail product listings or generic text synthesis. This branch runs
   // before general-knowledge specialists to avoid needless latency.
   if (
+    kind !== "COMPARISON_RESEARCH" &&
     isLiveBitcoinPriceQuestion(query) &&
     (kind === "CURRENT_DATA" || verificationMode === "REQUIRED")
   ) {
+    if (unsupportedBitcoinSpotCurrency(query)) {
+      return abstain(
+        "Solo puedo corroborar cotizaciones BTC/USD. No tengo una cotización verificada en la moneda solicitada.",
+        {
+          reasonCode: "BITCOIN_SPOT_UNSUPPORTED_CURRENCY",
+          retryable: false,
+          stage: "bitcoin_spot",
+        },
+      );
+    }
     return await liveBitcoinSpotEvidence(deps);
   }
 
