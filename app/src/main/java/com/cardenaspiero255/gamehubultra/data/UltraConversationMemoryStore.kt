@@ -2,6 +2,9 @@ package com.cardenaspiero255.gamehubultra.data
 
 import android.content.Context
 import com.cardenaspiero255.gamehubultra.ai.UltraLongTermMemoryGateway
+import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommand
+import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
+import com.cardenaspiero255.gamehubultra.ai.UltraMemoryPrivacyPreferences
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryPersistence
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryRecall
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryRepository
@@ -55,6 +58,12 @@ class UltraConversationMemoryStore private constructor(
     context: Context
 ) : UltraLongTermMemoryGateway {
     private val appContext = context.applicationContext
+    private val privateSettings = SecureCredentialStore(appContext)
+    private val privacy = UltraMemoryPrivacyPreferences(
+        read = privateSettings::get,
+        write = privateSettings::put,
+        remove = privateSettings::remove
+    )
     private val executor: ExecutorService = Executors.newSingleThreadExecutor { task ->
         Thread(task, "UltraMemoryStore").apply {
             isDaemon = true
@@ -72,6 +81,44 @@ class UltraConversationMemoryStore private constructor(
 
     private fun repository(): UltraMemoryRepository = repositoryProvider.get()
 
+    private fun prunedRepository(): UltraMemoryRepository = repository().also { repo ->
+        repo.pruneExpiredConversations(privacy.retentionDays())
+    }
+
+    /** No opt-in marker exists on clean installs or legacy saved history. */
+    fun isMemoryEnabled(): Boolean = privacy.hasConsent()
+
+    fun conversationRetentionDays(): Int = privacy.retentionDays()
+
+    /** Serialized with queued saves: an earlier queued turn cannot resurrect after a revoke. */
+    fun setMemoryEnabled(enabled: Boolean) {
+        executor.submit {
+            if (enabled) {
+                repository().handleCommand("activa la memoria", UltraMemoryScope())
+                privacy.setConsent(true)
+                prunedRepository()
+            } else {
+                privacy.setConsent(false)
+                repository().handleCommand("desactiva la memoria", UltraMemoryScope())
+            }
+        }.get()
+    }
+
+    fun setConversationRetentionDays(days: Int): Boolean =
+        executor.submit<Boolean> {
+            if (!privacy.setRetentionDays(days)) return@submit false
+            prunedRepository()
+            true
+        }.get()
+
+    /** Deletes the encrypted payload and revokes consent with all pending writes drained. */
+    fun deleteAllPrivateMemory() {
+        executor.submit {
+            privacy.setConsent(false)
+            repository().purgeAllData()
+        }.get()
+    }
+
     fun warmUp() {
         repository()
     }
@@ -81,16 +128,43 @@ class UltraConversationMemoryStore private constructor(
         scope: UltraMemoryScope
     ): String? =
         executor.submit<String?> {
-            repository().handleCommand(message, scope)
+            when (UltraMemoryCommandParser.parse(message)) {
+                UltraMemoryCommand.Enable -> {
+                    repository().handleCommand(message, scope).also {
+                        privacy.setConsent(true)
+                        prunedRepository()
+                    }
+                }
+                UltraMemoryCommand.Disable -> {
+                    privacy.setConsent(false)
+                    repository().handleCommand(message, scope)
+                }
+                UltraMemoryCommand.ClearAll -> {
+                    privacy.setConsent(false)
+                    repository().purgeAllData()
+                    "Borré toda la memoria local cifrada de Ultra y desactivé su guardado."
+                }
+                is UltraMemoryCommand.Remember,
+                is UltraMemoryCommand.Pin,
+                is UltraMemoryCommand.Archive -> {
+                    if (privacy.hasConsent()) prunedRepository().handleCommand(message, scope)
+                    else "La memoria privada está desactivada. Actívala para guardar recuerdos."
+                }
+                else -> prunedRepository().handleCommand(message, scope)
+            }
         }.get()
 
     override fun recallContext(
         message: String,
         scope: UltraMemoryScope,
         limit: Int
-    ): List<UltraMemoryRecall> = repository().recallContext(message, scope, limit)
+    ): List<UltraMemoryRecall> =
+        if (privacy.hasConsent()) prunedRepository().recallContext(message, scope, limit)
+        else emptyList()
 
-    fun snapshot(): UltraMemorySnapshot = repository().snapshot()
+    fun snapshot(): UltraMemorySnapshot =
+        if (privacy.hasConsent()) prunedRepository().snapshot()
+        else UltraMemorySnapshot(enabled = false)
 
     fun syncConversation(
         previous: List<String>,
@@ -99,7 +173,8 @@ class UltraConversationMemoryStore private constructor(
         threadId: String = "default",
         timestampMillis: Long? = null
     ) {
-        repository().syncConversation(
+        if (!privacy.hasConsent()) return
+        prunedRepository().syncConversation(
             previous = previous,
             next = next,
             scope = scope,
@@ -123,7 +198,9 @@ class UltraConversationMemoryStore private constructor(
     fun recentConversationLines(
         limit: Int,
         scope: UltraMemoryScope = UltraMemoryScope()
-    ): List<String> = repository().recentConversationLines(limit, scope)
+    ): List<String> =
+        if (privacy.hasConsent()) prunedRepository().recentConversationLines(limit, scope)
+        else emptyList()
 
     fun clearConversationHistory(scope: UltraMemoryScope = UltraMemoryScope()) {
         repository().clearConversationHistory(scope)
@@ -145,15 +222,22 @@ class UltraConversationMemoryStore private constructor(
         }
     }
 
-    fun exportSnapshot(): String = repository().exportSnapshot()
+    fun exportSnapshot(): String =
+        if (privacy.hasConsent()) prunedRepository().exportSnapshot()
+        else com.cardenaspiero255.gamehubultra.ai.UltraMemoryCodec.encode(UltraMemorySnapshot(enabled = false))
 
-    fun importSnapshot(serialized: String): Boolean = repository().importSnapshot(serialized)
+    fun importSnapshot(serialized: String): Boolean =
+        privacy.hasConsent() && repository().importSnapshot(serialized).also { imported ->
+            if (imported) prunedRepository()
+        }
 
     fun search(
         query: String,
         scope: UltraMemoryScope,
         limit: Int = 20
-    ): List<UltraMemoryRecall> = repository().search(query, scope, limit)
+    ): List<UltraMemoryRecall> =
+        if (privacy.hasConsent()) prunedRepository().search(query, scope, limit)
+        else emptyList()
 
     companion object {
         @Volatile
