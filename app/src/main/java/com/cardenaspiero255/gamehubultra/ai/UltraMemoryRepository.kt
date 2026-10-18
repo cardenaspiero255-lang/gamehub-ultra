@@ -285,16 +285,17 @@ class UltraMemoryRepository(
     }
 
     private fun clearConversationHistoryLocked(scope: UltraMemoryScope) {
-        persist(
-            state.copy(
-                records = state.records.filter { record ->
-                    val sameScope =
-                        record.scope.userId == scope.userId &&
-                            record.scope.gamePackage == scope.gamePackage
-                    !sameScope || record.kind == UltraMemoryKind.FACT
-                }
-            )
-        )
+        val remaining = state.records.filter { record ->
+            val sameScope =
+                record.scope.userId == scope.userId &&
+                    record.scope.gamePackage == scope.gamePackage
+            !sameScope || record.kind == UltraMemoryKind.FACT
+        }
+        // A late UI conversation reset must not recreate the encrypted
+        // preference entry after a complete privacy erasure.
+        if (remaining != state.records) {
+            persist(state.copy(records = remaining))
+        }
     }
 
     private fun removeMatching(query: String, scope: UltraMemoryScope): Int {
