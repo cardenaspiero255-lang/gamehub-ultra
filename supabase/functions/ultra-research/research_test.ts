@@ -10221,6 +10221,14 @@ Deno.test(
         query: "Ultra, ¿cuál es el precio de minar Bitcoin?",
         kind: "CURRENT_DATA",
       },
+      {
+        query: "Ultra, precio de Bitcoin Cash ahora",
+        kind: "CURRENT_DATA",
+      },
+      {
+        query: "Ultra, cotización de Wrapped Bitcoin ahora",
+        kind: "CURRENT_DATA",
+      },
     ];
     for (const { query, kind } of cases) {
       let spotCalls = 0;
