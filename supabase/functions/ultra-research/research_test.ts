@@ -10206,6 +10206,84 @@ Deno.test(
 );
 
 Deno.test(
+  "BTC spot shortcut does not hijack comparisons, historical prices or mining costs",
+  async () => {
+    const cases = [
+      { query: "Ultra, compara el precio de Bitcoin vs Ethereum", kind: "COMPARISON_RESEARCH" },
+      { query: "Ultra, ¿cuál fue el precio de Bitcoin en 2017?", kind: "CURRENT_DATA" },
+      { query: "Ultra, ¿cuál es el precio de minar Bitcoin?", kind: "CURRENT_DATA" },
+    ];
+    for (const { query, kind } of cases) {
+      let spotCalls = 0;
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (url.hostname === "api.coinbase.com" ||
+              url.hostname === "api.kraken.com") {
+            spotCalls++;
+            return jsonResponse({
+              data: { amount: "105000", currency: "USD" },
+              error: [],
+              result: { XXBTZUSD: { c: ["105100", "0.01"] } },
+            });
+          }
+          return jsonResponse({ query: { pages: {} }, docs: [] });
+        },
+        env: () => undefined,
+        sleep: () => Promise.resolve(),
+      };
+      const result = await routeResearchQuery(
+        query, deps, "", kind, "REQUIRED"
+      );
+      if (spotCalls !== 0 || result.claimKey === "bitcoin:usd:spot:exchanges") {
+        throw new Error("Non-spot BTC query was hijacked: " + query);
+      }
+    }
+  },
+);
+
+Deno.test(
+  "BTC live spot refuses explicit unsupported EUR and Chilean peso denominations",
+  async () => {
+    const queries = [
+      "Ultra, ¿cuánto vale Bitcoin en EUR ahora?",
+      "Ultra, precio de Bitcoin en pesos chilenos",
+      "Ultra, BTC/CLP spot ahora",
+    ];
+    for (const query of queries) {
+      let spotCalls = 0;
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (url.hostname === "api.coinbase.com") {
+            spotCalls++;
+            return jsonResponse({
+              data: { amount: "105000", currency: "USD", base: "BTC" },
+            });
+          }
+          if (url.hostname === "api.kraken.com") {
+            spotCalls++;
+            return jsonResponse({
+              error: [], result: { XXBTZUSD: { c: ["105100", "0.02"] } },
+            });
+          }
+          throw new Error("Unexpected market provider: " + url);
+        },
+        env: () => undefined,
+      };
+      const result = await routeResearchQuery(
+        query, deps, "", "CURRENT_DATA", "REQUIRED"
+      );
+      if (!result.abstained ||
+          result.reasonCode !== "BITCOIN_SPOT_UNSUPPORTED_CURRENCY" ||
+          spotCalls !== 0) {
+        throw new Error("Unsupported quote currency must fail closed: " + query);
+      }
+    }
+  },
+);
+
+Deno.test(
   "live Bitcoin spot uses two independent public USD quotes, not retail prices",
   async () => {
     const urls: string[] = [];
