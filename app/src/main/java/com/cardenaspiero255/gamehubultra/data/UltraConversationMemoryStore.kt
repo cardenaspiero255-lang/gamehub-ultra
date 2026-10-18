@@ -203,23 +203,23 @@ class UltraConversationMemoryStore private constructor(
         else emptyList()
 
     fun clearConversationHistory(scope: UltraMemoryScope = UltraMemoryScope()) {
-        repository().clearConversationHistory(scope)
+        executor.submit {
+            repository().clearConversationHistory(scope)
+        }.get()
     }
 
     fun clearConversationHistory(userId: String) {
-        repository().clearConversationHistory(userId)
+        clearConversationHistory(UltraMemoryScope(userId = userId))
     }
 
     fun enqueueClearConversationHistory(scope: UltraMemoryScope = UltraMemoryScope()) {
         executor.execute {
-            clearConversationHistory(scope)
+            repository().clearConversationHistory(scope)
         }
     }
 
     fun enqueueClearConversationHistory(userId: String) {
-        executor.execute {
-            clearConversationHistory(userId)
-        }
+        enqueueClearConversationHistory(UltraMemoryScope(userId = userId))
     }
 
     fun exportSnapshot(): String =
