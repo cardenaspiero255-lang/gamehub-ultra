@@ -6,6 +6,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommand
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryPrivacyPreferences
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryPrivacyGateway
+import com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryPersistence
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryRecall
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryRepository
@@ -93,6 +94,7 @@ class UltraConversationMemoryStore private constructor(
 
     /** Serialized with queued saves: an earlier queued turn cannot resurrect after a revoke. */
     override fun setMemoryEnabled(enabled: Boolean) {
+        if (!enabled) UltraPrivacyEpoch.invalidate()
         executor.submit {
             if (enabled) {
                 repository().handleCommand("activa la memoria", UltraMemoryScope())
@@ -114,6 +116,7 @@ class UltraConversationMemoryStore private constructor(
 
     /** Deletes the encrypted payload and revokes consent with all pending writes drained. */
     override fun deleteAllPrivateMemory() {
+        UltraPrivacyEpoch.invalidate()
         executor.submit {
             privacy.setConsent(false)
             repository().purgeAllData()
@@ -121,15 +124,20 @@ class UltraConversationMemoryStore private constructor(
     }
 
     fun warmUp() {
-        repository()
+        // Retention is independent of recall consent: purge even when opted out.
+        prunedRepository()
     }
 
     override fun handleCommand(
         message: String,
         scope: UltraMemoryScope
-    ): String? =
-        executor.submit<String?> {
-            when (UltraMemoryCommandParser.parse(message)) {
+    ): String? {
+        val command = UltraMemoryCommandParser.parse(message)
+        if (command == UltraMemoryCommand.Disable || command == UltraMemoryCommand.ClearAll) {
+            UltraPrivacyEpoch.invalidate()
+        }
+        return executor.submit<String?> {
+            when (command) {
                 UltraMemoryCommand.Enable -> {
                     repository().handleCommand(message, scope).also {
                         privacy.setConsent(true)
@@ -154,6 +162,7 @@ class UltraConversationMemoryStore private constructor(
                 else -> prunedRepository().handleCommand(message, scope)
             }
         }.get()
+    }
 
     override fun recallContext(
         message: String,
