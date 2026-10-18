@@ -33,6 +33,12 @@ internal class UltraAssistantQueryRunner(
 ) {
     private val _isRunning = MutableStateFlow(false)
     val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
+    private var activeJob: Job? = null
+
+    /** Cancel an in-flight turn before a privacy erasure; later completions stay suppressed. */
+    fun cancelActive() {
+        synchronized(this) { activeJob?.cancel(CancellationException("Private context erased")) }
+    }
 
     fun launch(
         onAccepted: () -> Unit,
@@ -66,8 +72,14 @@ internal class UltraAssistantQueryRunner(
             }
         }
         // Completion also runs for jobs cancelled before their body starts.
+        synchronized(this) { activeJob = job }
         job.invokeOnCompletion {
-            _isRunning.value = false
+            synchronized(this) {
+                if (activeJob === job) {
+                    activeJob = null
+                    _isRunning.value = false
+                }
+            }
         }
         return UltraAssistantQuerySubmission.Accepted(job)
     }
