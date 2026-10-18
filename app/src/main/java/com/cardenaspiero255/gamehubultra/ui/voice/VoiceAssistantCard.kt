@@ -19,6 +19,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cardenaspiero255.gamehubultra.*
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.*
+import com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch
 import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
@@ -118,7 +119,17 @@ internal fun VoiceAssistantCard(
     var memoryConsent by remember { mutableStateOf(false) }
     var memoryRetentionDays by remember { mutableIntStateOf(30) }
     LaunchedEffect(showMemoryPrivacy) {
-        if (showMemoryPrivacy) {
+        fun invalidatePrivateTurns() {
+        UltraPrivacyEpoch.invalidate()
+        queryRunner.cancelActive()
+        activeVoiceTurn?.cancel()
+        voiceController.stopListening()
+        transcript = ""
+        response = null
+        chatMessage = ""
+    }
+
+    if (showMemoryPrivacy) {
             val settings = withContext(Dispatchers.IO) {
                 privateMemoryStore.isMemoryEnabled() to privateMemoryStore.conversationRetentionDays()
             }
@@ -127,6 +138,7 @@ internal fun VoiceAssistantCard(
         }
     }
     var chatMessage by remember { mutableStateOf("") }
+    var activeVoiceTurn by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val chatSending by queryRunner.isRunning.collectAsStateWithLifecycle()
     var permissionGranted by remember {
         mutableStateOf(
@@ -335,9 +347,11 @@ internal fun VoiceAssistantCard(
                     gamePackage = turnAiContext.selectedGamePackage
                 ) ?: return@transcript
                 val originatingGamePackage = capturedVoiceScope.gamePackage
+                val turnPrivacyEpoch = UltraPrivacyEpoch.current()
                 transcript = spokenText
-                scope.launch(Dispatchers.IO) {
+                activeVoiceTurn = scope.launch(Dispatchers.IO) {
                     if (
+                        !UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch) ||
                         !isUltraVoiceTurnScopeCurrent(
                             captured = capturedVoiceScope,
                             assistantInputReady = latestAssistantInputEnabled,
@@ -356,6 +370,7 @@ internal fun VoiceAssistantCard(
                     )
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
                         if (
+                            UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch) &&
                             UltraConversationScopePolicy.isSameGame(
                                 originatingGamePackage,
                                 latestAiContext.selectedGamePackage
@@ -385,7 +400,7 @@ internal fun VoiceAssistantCard(
                                 answer = route.answer,
                                 networkGaming = networkGaming,
                                 isCurrent = {
-                                    isUltraVoiceTurnScopeCurrent(
+                                    UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch) && isUltraVoiceTurnScopeCurrent(
                                         captured = capturedVoiceScope,
                                         assistantInputReady = latestAssistantInputEnabled,
                                         currentGamePackage = latestAiContext.selectedGamePackage
@@ -398,7 +413,7 @@ internal fun VoiceAssistantCard(
                                 maxEntries = MAX_CHAT_HISTORY
                             )
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                UltraVoiceResultPublisher.publishIfCurrentGame(
+                                if (UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch)) UltraVoiceResultPublisher.publishIfCurrentGame(
                                     originatingGamePackage = originatingGamePackage,
                                     currentGamePackage = latestAiContext.selectedGamePackage
                                 ) {
@@ -440,7 +455,7 @@ internal fun VoiceAssistantCard(
                                     )
                                 }
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                UltraVoiceResultPublisher.publishIfCurrentGame(
+                                if (UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch)) UltraVoiceResultPublisher.publishIfCurrentGame(
                                     originatingGamePackage = originatingGamePackage,
                                     currentGamePackage = latestAiContext.selectedGamePackage
                                 ) {
@@ -483,9 +498,10 @@ applyNetworkProfile = networkGaming::applyProfile
                                 maxEntries = MAX_CHAT_HISTORY
                             )
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                if (result is VoiceActionResult.GameOpened) {
+                                if (UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch) && result is VoiceActionResult.GameOpened) {
                                     onGameSelected(result.game.packageName)
                                 }
+                                if (!UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch)) return@withContext
                                 UltraCommandUiEffectPolicy
                                     .profileForCurrentGameCallback(result)
                                     ?.let(onProfileSelected)
@@ -494,7 +510,7 @@ applyNetworkProfile = networkGaming::applyProfile
                                         result = result,
                                         gamePackage = originatingGamePackage
                                     )
-                                UltraVoiceResultPublisher.publishIfCurrentGame(
+                                if (UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch)) UltraVoiceResultPublisher.publishIfCurrentGame(
                                     originatingGamePackage = originatingGamePackage,
                                     currentGamePackage = latestAiContext.selectedGamePackage
                                 ) {
@@ -566,6 +582,7 @@ applyNetworkProfile = networkGaming::applyProfile
                             checked = memoryConsent,
                             enabled = !memoryPrivacyBusy,
                             onCheckedChange = { enabled ->
+                                if (!enabled) invalidatePrivateTurns()
                                 memoryPrivacyBusy = true
                                 scope.launch {
                                     val result = withContext(Dispatchers.IO) {
@@ -620,6 +637,7 @@ applyNetworkProfile = networkGaming::applyProfile
                     TextButton(
                         enabled = !memoryPrivacyBusy,
                         onClick = {
+                            invalidatePrivateTurns()
                             memoryPrivacyBusy = true
                             val selectedGame = latestAiContext.selectedGamePackage
                             scope.launch {
@@ -654,6 +672,7 @@ applyNetworkProfile = networkGaming::applyProfile
                             Button(
                                 enabled = !memoryPrivacyBusy,
                                 onClick = {
+                                    invalidatePrivateTurns()
                                     memoryPrivacyBusy = true
                                     scope.launch {
                                         val result = withContext(Dispatchers.IO) {
