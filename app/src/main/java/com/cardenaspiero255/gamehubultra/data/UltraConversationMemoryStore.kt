@@ -214,7 +214,11 @@ class UltraConversationMemoryStore private constructor(
 
     fun enqueueClearConversationHistory(scope: UltraMemoryScope = UltraMemoryScope()) {
         executor.execute {
-            repository().clearConversationHistory(scope)
+            // Recheck consent at execution time, not when enqueuing.
+            // Revocation / complete erasure always wins over late UI callbacks.
+            if (privacy.hasConsent()) {
+                repository().clearConversationHistory(scope)
+            }
         }
     }
 
