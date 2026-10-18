@@ -20,7 +20,6 @@ import com.cardenaspiero255.gamehubultra.*
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.*
 import com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch
-import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import com.cardenaspiero255.gamehubultra.voice.*
@@ -67,8 +66,7 @@ internal fun VoiceAssistantCard(
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
     assistantInputEnabled: Boolean,
-    startListeningRequest: Int = 0,
-    memoryPrivacyStoreOverride: com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore? = null
+    startListeningRequest: Int = 0
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -114,9 +112,7 @@ internal fun VoiceAssistantCard(
     var showEraseMemoryConfirmation by rememberSaveable { mutableStateOf(false) }
     var memoryPrivacyBusy by remember { mutableStateOf(false) }
     var memoryPrivacyNotice by remember { mutableStateOf<String?>(null) }
-    val privateMemoryStore = remember(context, memoryPrivacyStoreOverride) {
-        memoryPrivacyStoreOverride ?: GameHubProductionComposition.ultraConversationMemory(context)
-    }
+    val privateMemoryStore = ultraRuntime.memoryPrivacy
     var memoryConsent by remember { mutableStateOf(false) }
     var memoryRetentionDays by remember { mutableIntStateOf(30) }
     LaunchedEffect(showMemoryPrivacy) {
