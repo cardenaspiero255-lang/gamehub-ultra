@@ -179,6 +179,10 @@ class VoiceAssistantController(
         runCatching { oldTts?.shutdown() }
     }
 
+    /** Test seam: uses the same generation-fenced listener as production recognition. */
+    internal fun recognitionListenerForTest(): RecognitionListener =
+        recognitionListener(privacyRecognition.start())
+
     private fun recognitionListener(
         token: UltraRecognitionPrivacyGate.Token
     ): RecognitionListener = object : RecognitionListener {

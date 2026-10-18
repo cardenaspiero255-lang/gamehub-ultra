@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -576,6 +577,7 @@ applyNetworkProfile = networkGaming::applyProfile
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Guardar recuerdos", modifier = Modifier.weight(1f))
                         Switch(
+                            modifier = Modifier.testTag("ultra-memory-consent-toggle"),
                             checked = memoryConsent,
                             enabled = !memoryPrivacyBusy,
                             onCheckedChange = { enabled ->
@@ -662,32 +664,6 @@ applyNetworkProfile = networkGaming::applyProfile
                         ) { Text("Borrar toda mi memoria") }
                     } else {
                         Text("Se borrarán conversaciones y recuerdos de todos los juegos. ¿Confirmas?")
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { showEraseMemoryConfirmation = false }) {
-                                Text("Cancelar")
-                            }
-                            Button(
-                                enabled = !memoryPrivacyBusy,
-                                onClick = {
-                                    invalidatePrivateTurns()
-                                    memoryPrivacyBusy = true
-                                    scope.launch {
-                                        val result = withContext(Dispatchers.IO) {
-                                            runCatching { privateMemoryStore.deleteAllPrivateMemory() }
-                                        }
-                                        memoryPrivacyBusy = false
-                                        showEraseMemoryConfirmation = false
-                                        if (result.isSuccess) {
-                                            memoryConsent = false
-                                            latestOnConversationChanged(emptyList())
-                                            memoryPrivacyNotice = "Memoria cifrada eliminada y consentimiento revocado."
-                                        } else {
-                                            memoryPrivacyNotice = "No pude borrar toda la memoria."
-                                        }
-                                    }
-                                }
-                            ) { Text("Borrar definitivamente") }
-                        }
                     }
                     memoryPrivacyNotice?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall)
@@ -695,10 +671,40 @@ applyNetworkProfile = networkGaming::applyProfile
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = { showMemoryPrivacy = false },
-                    enabled = !memoryPrivacyBusy
-                ) { Text("Cerrar") }
+                if (showEraseMemoryConfirmation) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            enabled = !memoryPrivacyBusy,
+                            onClick = { showEraseMemoryConfirmation = false }
+                        ) { Text("Cancelar") }
+                        Button(
+                            enabled = !memoryPrivacyBusy,
+                            onClick = {
+                                invalidatePrivateTurns()
+                                memoryPrivacyBusy = true
+                                scope.launch {
+                                    val result = withContext(Dispatchers.IO) {
+                                        runCatching { privateMemoryStore.deleteAllPrivateMemory() }
+                                    }
+                                    memoryPrivacyBusy = false
+                                    showEraseMemoryConfirmation = false
+                                    if (result.isSuccess) {
+                                        memoryConsent = false
+                                        latestOnConversationChanged(emptyList())
+                                        memoryPrivacyNotice = "Memoria cifrada eliminada y consentimiento revocado."
+                                    } else {
+                                        memoryPrivacyNotice = "No pude borrar toda la memoria."
+                                    }
+                                }
+                            }
+                        ) { Text("Borrar definitivamente") }
+                    }
+                } else {
+                    TextButton(
+                        onClick = { showMemoryPrivacy = false },
+                        enabled = !memoryPrivacyBusy
+                    ) { Text("Cerrar") }
+                }
             }
         )
     }

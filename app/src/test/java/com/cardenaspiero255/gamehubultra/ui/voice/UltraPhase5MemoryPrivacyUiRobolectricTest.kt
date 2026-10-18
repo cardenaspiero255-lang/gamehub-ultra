@@ -37,7 +37,7 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         rule.setContent { DemoPrivacyCard(store, ui) }
         rule.onNodeWithText("Privacidad y memoria").performClick()
         rule.onNodeWithText("Memoria privada de Ultra").assertExists()
-        rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState))[1].performClick()
+        rule.onNodeWithTag("ultra-memory-consent-toggle").performClick()
         rule.waitUntil(10000) {
             rule.onAllNodesWithText("Memoria activada con tu consentimiento.").fetchSemanticsNodes().isNotEmpty()
         }
@@ -53,9 +53,9 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         }
         Mockito.verify(store).clearConversationHistory(UltraMemoryScope(userId = "local"))
         rule.onNodeWithText("Borrar toda mi memoria").performClick()
-        rule.onNodeWithText("Cancelar").performScrollTo().performClick()
+        rule.onNodeWithText("Cancelar").performClick()
         rule.onNodeWithText("Borrar toda mi memoria").performClick()
-        rule.onNodeWithText("Borrar definitivamente").performScrollTo().performClick()
+        rule.onNodeWithText("Borrar definitivamente").performClick()
         rule.waitUntil(10000) {
             rule.onAllNodesWithText("Memoria cifrada eliminada y consentimiento revocado.").fetchSemanticsNodes().isNotEmpty()
         }
@@ -71,10 +71,10 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         rule.setContent { DemoPrivacyCard(store, ui) }
         rule.onNodeWithText("Privacidad y memoria").performClick()
         rule.waitUntil(10000) {
-            rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState))[1]
+            rule.onNodeWithTag("ultra-memory-consent-toggle")
                 .fetchSemanticsNode().config[SemanticsProperties.ToggleableState] == ToggleableState.On
         }
-        rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState))[1].performClick()
+        rule.onNodeWithTag("ultra-memory-consent-toggle").performClick()
         rule.waitUntil(10000) {
             rule.onAllNodesWithText("Memoria desactivada; las conversaciones guardadas no se consultarán.").fetchSemanticsNodes().isNotEmpty()
         }
