@@ -5,6 +5,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraLongTermMemoryGateway
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommand
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryPrivacyPreferences
+import com.cardenaspiero255.gamehubultra.ai.UltraMemoryPrivacyGateway
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryPersistence
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryRecall
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryRepository
@@ -56,7 +57,7 @@ private class EncryptedUltraMemoryPersistence(
 
 class UltraConversationMemoryStore private constructor(
     context: Context
-) : UltraLongTermMemoryGateway {
+) : UltraLongTermMemoryGateway, UltraMemoryPrivacyGateway {
     private val appContext = context.applicationContext
     private val privateSettings = SecureCredentialStore(appContext)
     private val privacy = UltraMemoryPrivacyPreferences(
@@ -86,12 +87,12 @@ class UltraConversationMemoryStore private constructor(
     }
 
     /** No opt-in marker exists on clean installs or legacy saved history. */
-    fun isMemoryEnabled(): Boolean = privacy.hasConsent()
+    override fun isMemoryEnabled(): Boolean = privacy.hasConsent()
 
-    fun conversationRetentionDays(): Int = privacy.retentionDays()
+    override fun conversationRetentionDays(): Int = privacy.retentionDays()
 
     /** Serialized with queued saves: an earlier queued turn cannot resurrect after a revoke. */
-    fun setMemoryEnabled(enabled: Boolean) {
+    override fun setMemoryEnabled(enabled: Boolean) {
         executor.submit {
             if (enabled) {
                 repository().handleCommand("activa la memoria", UltraMemoryScope())
@@ -104,7 +105,7 @@ class UltraConversationMemoryStore private constructor(
         }.get()
     }
 
-    fun setConversationRetentionDays(days: Int): Boolean =
+    override fun setConversationRetentionDays(days: Int): Boolean =
         executor.submit<Boolean> {
             if (!privacy.setRetentionDays(days)) return@submit false
             prunedRepository()
@@ -112,7 +113,7 @@ class UltraConversationMemoryStore private constructor(
         }.get()
 
     /** Deletes the encrypted payload and revokes consent with all pending writes drained. */
-    fun deleteAllPrivateMemory() {
+    override fun deleteAllPrivateMemory() {
         executor.submit {
             privacy.setConsent(false)
             repository().purgeAllData()
@@ -202,10 +203,14 @@ class UltraConversationMemoryStore private constructor(
         if (privacy.hasConsent()) prunedRepository().recentConversationLines(limit, scope)
         else emptyList()
 
-    fun clearConversationHistory(scope: UltraMemoryScope = UltraMemoryScope()) {
+    override fun clearConversationHistory(scope: UltraMemoryScope) {
         executor.submit {
             repository().clearConversationHistory(scope)
         }.get()
+    }
+
+    fun clearConversationHistory() {
+        clearConversationHistory(UltraMemoryScope())
     }
 
     fun clearConversationHistory(userId: String) {
