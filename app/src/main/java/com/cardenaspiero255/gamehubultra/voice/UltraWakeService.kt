@@ -60,6 +60,8 @@ class UltraWakeService : Service() {
         const val ACTION_STOP = "com.cardenaspiero255.gamehubultra.voice.STOP"
         private const val RESTART_DELAY_MS = 180L
         private const val WAKE_DEBOUNCE_MS = 700L
+        private const val SPEECH_INTERRUPT_LISTEN_DELAY_MS = 280L
+        private const val MAX_SPEECH_INTERRUPT_RETRIES = 3
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -70,6 +72,7 @@ class UltraWakeService : Service() {
     private val speechGeneration = UltraWakeSpeechGeneration()
     private val playbackGuard = UltraWakePlaybackGuard()
     private val speechInitGate = UltraTtsInitializationGate()
+    private var speechInterruptionRetryCount = 0
     private var waitingForSpeechEngine = false
     private var speechEngineFailed = false
     private val repeatGate = UltraWakeRepeatGate()
@@ -90,6 +93,13 @@ class UltraWakeService : Service() {
         GameHubProductionComposition.aliasRepository(applicationContext)
     }
     private val restartRecognition = Runnable { startRecognition() }
+    private val listenDuringSpeech = Runnable {
+        if (!stopped && playbackGuard.isPlaybackActive() &&
+            commandCoordinator.isCommandRunning() && !persistentSessionActive
+        ) {
+            startRecognition(interruptionOnly = true)
+        }
+    }
     // A new generation is bound to every listening attempt. Late callbacks from
     // destroyed/replaced recognizers must not mutate the current session.
     private var recognitionGeneration = 0L
@@ -144,6 +154,7 @@ class UltraWakeService : Service() {
         if (pending != null && waitingForSpeechEngine) {
             waitingForSpeechEngine = false
             speechPlayback.speak(pending)
+            scheduleSpeechInterruptionListener()
         } else if (!ready && waitingForSpeechEngine) {
             // No TTS is available. Complete this turn so wake recognition
             // never remains stuck waiting for a speech callback.
@@ -171,9 +182,19 @@ class UltraWakeService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun startRecognition() {
+    // Preserve the no-argument entry point used by the existing Robolectric
+    // recovery tests and ordinary service restart callbacks.
+    private fun startRecognition() = startRecognition(interruptionOnly = false)
+
+    private fun startRecognition(interruptionOnly: Boolean) {
         if (stopped || recognitionStarting) return
-        if (!commandCoordinator.tryStartRecognition()) return
+        val interruptWindow = interruptionOnly && playbackGuard.isPlaybackActive()
+        if (interruptionOnly && !interruptWindow) return
+        if (interruptWindow) {
+            if (!commandCoordinator.tryStartSpeechInterruptionRecognition()) return
+        } else if (!commandCoordinator.tryStartRecognition()) {
+            return
+        }
 
         if (
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
@@ -191,13 +212,20 @@ class UltraWakeService : Service() {
         }
 
         recognitionStarting = true
-        var requestedMode = sessionPolicy.preferredMode()
+        // A bounded legacy recognizer can listen for "Ultra, para" while
+        // TTS is active if Android grants the mic. Persistent mode remains
+        // reserved for the normal continuous-listening session.
+        var requestedMode = if (interruptWindow) {
+            UltraWakeRecognitionMode.LEGACY_RESTARTING
+        } else {
+            sessionPolicy.preferredMode()
+        }
         val started = runCatching {
             val speech = recognizer ?: SpeechRecognizer.createSpeechRecognizer(this).also {
                 recognizer = it
             }
             val sessionGeneration = ++recognitionGeneration
-            speech.setRecognitionListener(listenerForGeneration(sessionGeneration))
+            speech.setRecognitionListener(listenerForGeneration(sessionGeneration, interruptWindow))
 
             if (requestedMode == UltraWakeRecognitionMode.PERSISTENT_SEGMENTED) {
                 val source = UltraPersistentSpeechSource.create()
@@ -250,7 +278,21 @@ class UltraWakeService : Service() {
         override fun onRmsChanged(rmsdB: Float) = Unit
         override fun onBufferReceived(buffer: ByteArray?) = Unit
         override fun onEndOfSpeech() = Unit
-        override fun onPartialResults(partialResults: Bundle?) = Unit
+        override fun onPartialResults(partialResults: Bundle?) {
+            val alternatives = partialResults
+                ?.getStringArrayList(RESULTS_RECOGNITION)
+                .orEmpty()
+            if (UltraWakePartialStopPolicy.shouldStop(
+                    playbackActive = playbackGuard.isPlaybackActive(),
+                    alternatives = alternatives
+                )
+            ) {
+                if (cancelPendingSpeechAndResume()) return
+                stopActiveUltraSpeech(speechPlayback::stop, speechGeneration::activeToken) {
+                    finishCommandAndResume(it, playbackEnded = true)
+                }
+            }
+        }
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
         override fun onSegmentResults(segmentResults: Bundle) {
@@ -315,10 +357,20 @@ class UltraWakeService : Service() {
      * Bind each registration to its session generation, not the mutable recognizer field.
      */
     private fun listenerForGeneration(generation: Long): RecognitionListener =
+        listenerForGeneration(generation, interruptionOnly = false)
+
+    private fun listenerForGeneration(
+        generation: Long,
+        interruptionOnly: Boolean
+    ): RecognitionListener =
         object : RecognitionListener by listener {
             // Non-actionable callbacks are delegated to the existing no-op handler.
             // Every callback that changes recovery or session state is guarded below.
             private fun isCurrent() = generation == recognitionGeneration && !stopped
+
+            override fun onPartialResults(partialResults: Bundle?) {
+                if (isCurrent()) listener.onPartialResults(partialResults)
+            }
 
             override fun onSegmentResults(segmentResults: Bundle) {
                 if (isCurrent()) listener.onSegmentResults(segmentResults)
@@ -329,11 +381,40 @@ class UltraWakeService : Service() {
             }
 
             override fun onResults(results: Bundle?) {
-                if (isCurrent()) listener.onResults(results)
+                if (!isCurrent()) return
+                if (interruptionOnly) {
+                    // Some recognizers provide stop words only in final results.
+                    // Forward stop intent to the safe partial-stop handler, not command routing.
+                    val alternatives = results?.getStringArrayList(RESULTS_RECOGNITION).orEmpty()
+                    if (UltraWakePartialStopPolicy.shouldStop(
+                            playbackActive = playbackGuard.isPlaybackActive(),
+                            alternatives = alternatives
+                        )
+                    ) {
+                        listener.onPartialResults(results)
+                    }
+                    commandCoordinator.onRecognitionFinished()
+                    return
+                }
+                listener.onResults(results)
             }
 
             override fun onError(error: Int) {
-                if (isCurrent()) listener.onError(error)
+                if (!isCurrent()) return
+                if (interruptionOnly) {
+                    commandCoordinator.onRecognitionFinished()
+                    speechInterruptionRetryCount++
+                    if (speechInterruptionRetryCount < MAX_SPEECH_INTERRUPT_RETRIES &&
+                        playbackGuard.isPlaybackActive()
+                    ) {
+                        scheduleSpeechInterruptionListenerAfterDelay(
+                            SPEECH_INTERRUPT_LISTEN_DELAY_MS *
+                                (1L shl speechInterruptionRetryCount)
+                        )
+                    }
+                    return
+                }
+                listener.onError(error)
             }
         }
 
@@ -470,12 +551,34 @@ class UltraWakeService : Service() {
     }
 
     private fun speakAndResume(response: String) {
+        speechInterruptionRetryCount = 0
         val readyText = speechInitGate.offer(response)
         when {
-            readyText != null -> speechPlayback.speak(readyText)
+            readyText != null -> {
+                speechPlayback.speak(readyText)
+                scheduleSpeechInterruptionListener()
+            }
             speechEngineFailed -> speechPlayback.speak("")
             response.isNotBlank() -> waitingForSpeechEngine = true
             else -> speechPlayback.speak("")
+        }
+    }
+
+    // Keep the no-argument entry point for existing callers and Robolectric tests.
+    private fun scheduleSpeechInterruptionListener() =
+        scheduleSpeechInterruptionListenerAfterDelay(SPEECH_INTERRUPT_LISTEN_DELAY_MS)
+
+    // Distinctly named delayed scheduling avoids confusing this overload
+    // with recursive recognition restarts during static security review.
+    private fun scheduleSpeechInterruptionListenerAfterDelay(delayMillis: Long) {
+        // This is best-effort on Android SpeechRecognizer: some OEMs do not
+        // permit input while TextToSpeech is speaking. It is only enabled after
+        // explicit consent to continuous listening and while TTS is active.
+        mainHandler.removeCallbacks(listenDuringSpeech)
+        if (playbackGuard.isPlaybackActive() && !persistentSessionActive &&
+            speechInterruptionRetryCount < MAX_SPEECH_INTERRUPT_RETRIES
+        ) {
+            mainHandler.postDelayed(listenDuringSpeech, delayMillis)
         }
     }
 
@@ -497,8 +600,15 @@ class UltraWakeService : Service() {
         playbackEnded: Boolean
     ) {
         if (!speechGeneration.complete(token)) return
+        mainHandler.removeCallbacks(listenDuringSpeech)
         if (playbackEnded) {
             playbackGuard.onPlaybackFinished(System.currentTimeMillis())
+            speechInterruptionRetryCount = 0
+        }
+        if (commandCoordinator.isRecognitionActive() && !persistentSessionActive) {
+            recognitionGeneration++
+            runCatching { recognizer?.cancel() }
+            commandCoordinator.onRecognitionFinished()
         }
         if (!commandCoordinator.finishCommand()) return
 

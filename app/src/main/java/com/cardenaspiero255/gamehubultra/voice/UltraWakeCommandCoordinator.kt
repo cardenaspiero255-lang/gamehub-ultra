@@ -18,6 +18,20 @@ internal class UltraWakeCommandCoordinator {
         }
     }
 
+    /**
+     * During audible TTS only, an opt-in continuous listener may attempt one
+     * recognition pass to hear an explicit stop request. Ordinary commands
+     * remain serialized, and repeated interrupt listeners are rejected.
+     */
+    fun tryStartSpeechInterruptionRecognition(): Boolean = synchronized(lock) {
+        if (!commandRunning || recognitionActive) {
+            false
+        } else {
+            recognitionActive = true
+            true
+        }
+    }
+
     fun onRecognitionFinished() {
         synchronized(lock) {
             recognitionActive = false

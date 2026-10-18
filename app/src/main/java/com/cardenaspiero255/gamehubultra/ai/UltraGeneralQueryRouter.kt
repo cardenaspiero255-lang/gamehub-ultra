@@ -72,6 +72,11 @@ object UltraGeneralQueryRouter {
     private val currentQualifierPattern = Regex(
         """\b(actual|actualmente|ahora|hoy|esta noche|esta semana|current|currently|latest|newest|today|tomorrow|tonight|this week)\b"""
     )
+    // In electrical engineering "current" names a physical quantity, not
+    // a freshness qualifier. Preserve "today", "currently" and price cues.
+    private val electricalCurrentPattern = Regex(
+        """\b(?:alternating|direct|electric|electrical|ac|dc)\s+current\b|\bcurrent\s+(?:density|flow|amplitude|direction|source|intensity|waveform|measurement)\b"""
+    )
     private val explicitWeatherValuePattern = Regex(
         """\b(que temperatura hace|temperatura (?:actual|ahora|hoy|en)|temperature (?:now|today|in)|clima (?:actual|ahora|hoy|manana|en)|weather (?:now|today|tomorrow|in)|pronostico (?:de|para|en|hoy|manana)|forecast (?:for|in|today|tomorrow))\b"""
     )
@@ -159,13 +164,19 @@ object UltraGeneralQueryRouter {
         // An actual comparison such as "VS Code vs Android Studio" still
         // contains its own independent comparison cue.
         val comparisonText = clean.replace(Regex("""\bvs\s+code\b"""), "visual studio code")
+        val comparisonTemporalText = electricalCurrentPattern.replace(clean, "electrical quantity")
         return when {
             comparisonPattern.containsMatchIn(comparisonText) ->
                 request(
                     transcript = transcript,
                     kind = UltraGeneralQueryKind.COMPARISON_RESEARCH,
                     verificationMode = UltraVerificationMode.REQUIRED,
-                    requiresFreshData = currentDataPattern.containsMatchIn(clean),
+                    // Comparisons explicitly asking for current information must
+                    // never reuse long-lived, stable-knowledge evidence.
+                    requiresFreshData = currentDataPattern.containsMatchIn(clean) ||
+                        currentQualifierPattern.containsMatchIn(comparisonTemporalText) ||
+                        explicitMarketValuePattern.containsMatchIn(clean) ||
+                        explicitCostQuestionPattern.containsMatchIn(clean),
                     timeoutMillis = RESEARCH_TIMEOUT_MS
                 )
 

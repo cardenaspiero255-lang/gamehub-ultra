@@ -36,6 +36,7 @@ class GameHubAiAdvisor(
     ): String? {
         UltraFrontierWorldStateRegistry.update(context)
         sessionMemoryAnswerOrNull(message, context)?.let { return it }
+        verifiedStableResponseForReportedVoiceIssue(message)?.let { return it }
 
         // A short, textbook-style definition already in the reviewed local
         // corpus does not need Gemini Nano's availability handshake/generation.
@@ -161,6 +162,9 @@ class GameHubAiAdvisor(
 
         // Factual gameplay memory wins over any generative answer.
         sessionMemoryAnswerOrNull(message, context)?.let { return it }
+        // Avoid waiting for Nano on a safe, narrow offline answer or a
+        // non-executable voice command: the user must hear an acknowledgement.
+        verifiedStableResponseForReportedVoiceIssue(message)?.let { return it }
 
         val visibleTexts = conversation
             .map { normalize(it.substringAfter(':').trim()) }
@@ -263,6 +267,45 @@ class GameHubAiAdvisor(
 
             else ->
                 "Soy Ultra. Puedo ayudarte en español con rendimiento, FPS, temperatura, batería, red, perfiles de GameHub Ultra y consultas generales. Si una respuesta necesita datos externos, intentaré usar información verificada."
+        }
+    }
+
+    /**
+     * Small reviewed answer set for user-reported physical failures.
+     * Only immutable textbook facts and non-executable profile discussions
+     * are served locally; requests classified as CURRENT/REQUIRED never use it.
+     */
+    private fun verifiedStableResponseForReportedVoiceIssue(message: String): String? {
+        if (UltraGeneralQueryRouter.classify(message).verificationMode == UltraVerificationMode.REQUIRED) {
+            return null
+        }
+        val clean = normalize(message)
+            .removePrefix("gamehub ultra ")
+            .removePrefix("gamehub ")
+            .removePrefix("ultra ")
+            .trim()
+        return when {
+            Regex("""^(?:no|nunca|jamas)\s+(?:me\s+)?(?:desactives?|deshabilites?|quites?|apagues?)\b.*\bx4\b""")
+                .containsMatchIn(clean) ->
+                "Entendido: no desactivaré X4. No he cambiado el perfil."
+
+            Regex("""^(?:que pasaria si|que pasa si|que ocurriria si|y si)\b.*\b(?:activara|activase|activo|activaria)\b.*\bx4\b""")
+                .containsMatchIn(clean) ->
+                "Si activaras X4, Ultra intentaría usar ese perfil de rendimiento en los juegos compatibles. El resultado depende de las capacidades y la temperatura del teléfono: no garantiza más FPS ni altera el hardware. No he activado X4."
+
+            Regex("""^(?:quien descubrio|quien fue el descubridor de|who discovered)\s+(?:la\s+)?penicilina\b""")
+                .containsMatchIn(clean) ->
+                "Alexander Fleming descubrió el efecto antibacteriano de la penicilina en 1928. Años después, Howard Florey, Ernst Chain y su equipo contribuyeron a convertirla en un tratamiento médico."
+
+            Regex("""^(?:que causo|que provoco|por que ocurrio|que motivo)\b.*\bextincion\b.*\bdinosaurios\b""")
+                .containsMatchIn(clean) ->
+                "La causa principal de la extinción de los dinosaurios no avianos hace unos 66 millones de años fue el impacto de un asteroide en Chicxulub, México. El polvo y otros cambios ambientales afectaron gravemente los ecosistemas; también se estudia la contribución del volcanismo."
+
+            Regex("""^(?:que es|que era|que hace|como funciona)\s+(?:(?:un|el|la)\s+)?(?:procesador|cpu)\b""")
+                .containsMatchIn(clean) ->
+                "Un procesador o CPU es el componente que ejecuta instrucciones de los programas, realiza operaciones y coordina tareas del dispositivo. Sus núcleos y frecuencia influyen en el rendimiento, junto con la memoria y la temperatura."
+
+            else -> null
         }
     }
 
