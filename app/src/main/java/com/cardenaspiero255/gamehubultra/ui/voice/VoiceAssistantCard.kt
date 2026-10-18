@@ -88,8 +88,8 @@ internal fun VoiceAssistantCard(
     val latestOnConversationChanged by rememberUpdatedState(onConversationChanged)
     val latestAssistantInputEnabled by rememberUpdatedState(assistantInputEnabled)
     var listening by remember { mutableStateOf(false) }
-    var transcript by rememberSaveable { mutableStateOf("") }
-    var response by rememberSaveable { mutableStateOf<String?>(null) }
+    var transcript by remember { mutableStateOf("") }
+    var response by remember { mutableStateOf<String?>(null) }
 
     // Android may reject startForeground after startForegroundService succeeded.
     // Observe the service-owned preference rather than treating the initial tap
@@ -126,7 +126,7 @@ internal fun VoiceAssistantCard(
             memoryRetentionDays = settings.second
         }
     }
-    var chatMessage by rememberSaveable { mutableStateOf("") }
+    var chatMessage by remember { mutableStateOf("") }
     val chatSending by queryRunner.isRunning.collectAsStateWithLifecycle()
     var permissionGranted by remember {
         mutableStateOf(
