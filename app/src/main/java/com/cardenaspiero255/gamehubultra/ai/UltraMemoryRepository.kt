@@ -189,14 +189,15 @@ class UltraMemoryRepository(
     }
 
     /**
-     * Physically expires prior conversation turns in every game scope.
+     * Removes expired conversation turns and derived summaries in every game scope.
      * Explicit facts remain until the user deletes them.
      */
     fun pruneExpiredConversations(retentionDays: Int): Int = synchronized(lock) {
         require(retentionDays in UltraMemoryPrivacyPreferences.ALLOWED_RETENTION_DAYS)
         val cutoff = nowMillis() - retentionDays.toLong() * 86_400_000L
         val remaining = state.records.filter { record ->
-            record.kind != UltraMemoryKind.CONVERSATION ||
+            (record.kind != UltraMemoryKind.CONVERSATION &&
+                record.kind != UltraMemoryKind.SUMMARY) ||
                 record.timestampMillis >= cutoff
         }
         val removed = state.records.size - remaining.size
