@@ -53,10 +53,11 @@ class UltraPhase5PrivateMemoryTest {
             UltraStoredMemory("old", UltraMemoryKind.CONVERSATION, UltraMemoryRole.USER, "secreto viejo", 1L, scope),
             UltraStoredMemory("fresh", UltraMemoryKind.CONVERSATION, UltraMemoryRole.USER, "reciente", 39 * day, scope),
             UltraStoredMemory("fact", UltraMemoryKind.FACT, UltraMemoryRole.SYSTEM, "preferencia personal", 1L, scope),
+            UltraStoredMemory("summary", UltraMemoryKind.SUMMARY, UltraMemoryRole.SYSTEM, "resumen viejo", 1L, scope),
             UltraStoredMemory("other-game", UltraMemoryKind.CONVERSATION, UltraMemoryRole.USER, "otro juego", 1L, scope.copy(gamePackage = "game.b"))
         ))))
         val repo = UltraMemoryRepository(storage, nowMillis = { 40 * day })
-        assertEquals(2, repo.pruneExpiredConversations(retentionDays = 7))
+        assertEquals(3, repo.pruneExpiredConversations(retentionDays = 7))
         assertEquals(setOf("fresh", "fact"), repo.snapshot().records.map { it.id }.toSet())
         assertEquals(0, repo.pruneExpiredConversations(retentionDays = 7))
         assertEquals(2, UltraMemoryCodec.decode(storage.read()!!).records.size)
