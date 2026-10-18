@@ -212,18 +212,23 @@ class UltraConversationMemoryStore private constructor(
         if (privacy.hasConsent()) prunedRepository().recentConversationLines(limit, scope)
         else emptyList()
 
-    override fun clearConversationHistory(scope: UltraMemoryScope) {
+    // The overloads share one bounded storage operation; none recursively invokes itself.
+    private fun eraseConversationHistoryFor(scope: UltraMemoryScope) {
         executor.submit {
             repository().clearConversationHistory(scope)
         }.get()
     }
 
+    override fun clearConversationHistory(scope: UltraMemoryScope) {
+        eraseConversationHistoryFor(scope)
+    }
+
     fun clearConversationHistory() {
-        clearConversationHistory(UltraMemoryScope())
+        eraseConversationHistoryFor(UltraMemoryScope())
     }
 
     fun clearConversationHistory(userId: String) {
-        clearConversationHistory(UltraMemoryScope(userId = userId))
+        eraseConversationHistoryFor(UltraMemoryScope(userId = userId))
     }
 
     fun enqueueClearConversationHistory(scope: UltraMemoryScope = UltraMemoryScope()) {
