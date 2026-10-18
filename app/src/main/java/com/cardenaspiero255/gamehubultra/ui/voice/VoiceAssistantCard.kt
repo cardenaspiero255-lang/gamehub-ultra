@@ -119,17 +119,7 @@ internal fun VoiceAssistantCard(
     var memoryConsent by remember { mutableStateOf(false) }
     var memoryRetentionDays by remember { mutableIntStateOf(30) }
     LaunchedEffect(showMemoryPrivacy) {
-        fun invalidatePrivateTurns() {
-        UltraPrivacyEpoch.invalidate()
-        queryRunner.cancelActive()
-        activeVoiceTurn?.cancel()
-        voiceController.stopListening()
-        transcript = ""
-        response = null
-        chatMessage = ""
-    }
-
-    if (showMemoryPrivacy) {
+        if (showMemoryPrivacy) {
             val settings = withContext(Dispatchers.IO) {
                 privateMemoryStore.isMemoryEnabled() to privateMemoryStore.conversationRetentionDays()
             }
@@ -560,6 +550,16 @@ applyNetworkProfile = networkGaming::applyProfile
 
     DisposableEffect(voiceController) {
         onDispose { voiceController.release() }
+    }
+
+    fun invalidatePrivateTurns() {
+        UltraPrivacyEpoch.invalidate()
+        queryRunner.cancelActive()
+        activeVoiceTurn?.cancel()
+        voiceController.stopListening()
+        transcript = ""
+        response = null
+        chatMessage = ""
     }
 
     if (showMemoryPrivacy) {
