@@ -15,7 +15,7 @@ class UltraPhase5ConsentHistoryResetTest {
         adapter.enqueueClearConversationHistory(UltraMemoryScope())
 
         Mockito.verify(store, Mockito.never())
-            .enqueueClearConversationHistory(Mockito.any(UltraMemoryScope::class.java))
+            .enqueueClearConversationHistory(UltraMemoryScope())
     }
 
     @Test
