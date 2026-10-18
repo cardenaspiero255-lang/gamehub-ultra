@@ -2,6 +2,7 @@ package com.cardenaspiero255.gamehubultra.ui.voice
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.cardenaspiero255.gamehubultra.UltraAssistantQueryRunner
 import com.cardenaspiero255.gamehubultra.UltraAssistantSessionMemory
@@ -35,7 +36,7 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         rule.setContent { DemoPrivacyCard(store, ui) }
         rule.onNodeWithText("Privacidad y memoria").performClick()
         rule.onNodeWithText("Memoria privada de Ultra").assertExists()
-        rule.onAllNodes(hasRole(androidx.compose.ui.semantics.Role.Switch))[1].performClick()
+        rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState))[1].performClick()
         rule.waitUntil(10000) {
             rule.onAllNodesWithText("Memoria activada con tu consentimiento.").fetchSemanticsNodes().isNotEmpty()
         }
@@ -68,7 +69,7 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         val ui = dependencies()
         rule.setContent { DemoPrivacyCard(store, ui) }
         rule.onNodeWithText("Privacidad y memoria").performClick()
-        rule.onAllNodes(hasRole(androidx.compose.ui.semantics.Role.Switch))[1].performClick()
+        rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState))[1].performClick()
         rule.waitUntil(10000) {
             rule.onAllNodesWithText("Memoria desactivada; las conversaciones guardadas no se consultarán.").fetchSemanticsNodes().isNotEmpty()
         }
