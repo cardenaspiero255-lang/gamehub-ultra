@@ -116,15 +116,6 @@ internal fun VoiceAssistantCard(
     val privateMemoryStore = ultraRuntime.memoryPrivacy
     var memoryConsent by remember { mutableStateOf(false) }
     var memoryRetentionDays by remember { mutableIntStateOf(30) }
-    LaunchedEffect(showMemoryPrivacy) {
-        if (showMemoryPrivacy) {
-            val settings = withContext(Dispatchers.IO) {
-                privateMemoryStore.isMemoryEnabled() to privateMemoryStore.conversationRetentionDays()
-            }
-            memoryConsent = settings.first
-            memoryRetentionDays = settings.second
-        }
-    }
     var chatMessage by remember { mutableStateOf("") }
     var activeVoiceTurn by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val chatSending by queryRunner.isRunning.collectAsStateWithLifecycle()
@@ -672,12 +663,7 @@ applyNetworkProfile = networkGaming::applyProfile
             },
             confirmButton = {
                 if (showEraseMemoryConfirmation) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(
-                            enabled = !memoryPrivacyBusy,
-                            onClick = { showEraseMemoryConfirmation = false }
-                        ) { Text("Cancelar") }
-                        Button(
+                    Button(
                             enabled = !memoryPrivacyBusy,
                             onClick = {
                                 invalidatePrivateTurns()
@@ -698,12 +684,19 @@ applyNetworkProfile = networkGaming::applyProfile
                                 }
                             }
                         ) { Text("Borrar definitivamente") }
-                    }
                 } else {
                     TextButton(
                         onClick = { showMemoryPrivacy = false },
                         enabled = !memoryPrivacyBusy
                     ) { Text("Cerrar") }
+                }
+            },
+            dismissButton = {
+                if (showEraseMemoryConfirmation) {
+                    TextButton(
+                        enabled = !memoryPrivacyBusy,
+                        onClick = { showEraseMemoryConfirmation = false }
+                    ) { Text("Cancelar") }
                 }
             }
         )
@@ -859,9 +852,27 @@ applyNetworkProfile = networkGaming::applyProfile
             }
             TextButton(
                 onClick = {
-                    showEraseMemoryConfirmation = false
-                    memoryPrivacyNotice = null
-                    showMemoryPrivacy = true
+                    if (!memoryPrivacyBusy) {
+                        showEraseMemoryConfirmation = false
+                        memoryPrivacyNotice = null
+                        memoryPrivacyBusy = true
+                        scope.launch {
+                            val settings = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    privateMemoryStore.isMemoryEnabled() to
+                                        privateMemoryStore.conversationRetentionDays()
+                                }
+                            }
+                            memoryPrivacyBusy = false
+                            if (settings.isSuccess) {
+                                memoryConsent = settings.getOrThrow().first
+                                memoryRetentionDays = settings.getOrThrow().second
+                                showMemoryPrivacy = true
+                            } else {
+                                response = "No pude cargar los controles de privacidad."
+                            }
+                        }
+                    }
                 }
             ) { Text("Privacidad y memoria") }
             Text(

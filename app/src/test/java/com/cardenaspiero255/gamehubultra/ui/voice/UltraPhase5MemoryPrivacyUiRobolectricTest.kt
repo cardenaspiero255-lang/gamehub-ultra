@@ -36,6 +36,9 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         val ui = dependencies(store)
         rule.setContent { DemoPrivacyCard(store, ui) }
         rule.onNodeWithText("Privacidad y memoria").performClick()
+        rule.waitUntil(10000) {
+            rule.onAllNodesWithText("Memoria privada de Ultra").fetchSemanticsNodes().isNotEmpty()
+        }
         rule.onNodeWithText("Memoria privada de Ultra").assertExists()
         rule.onNodeWithTag("ultra-memory-consent-toggle").performClick()
         rule.waitUntil(10000) {
@@ -70,6 +73,9 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
         val ui = dependencies(store)
         rule.setContent { DemoPrivacyCard(store, ui) }
         rule.onNodeWithText("Privacidad y memoria").performClick()
+        rule.waitUntil(10000) {
+            rule.onAllNodesWithText("Memoria privada de Ultra").fetchSemanticsNodes().isNotEmpty()
+        }
         rule.waitUntil(10000) {
             rule.onNodeWithTag("ultra-memory-consent-toggle")
                 .fetchSemanticsNode().config[SemanticsProperties.ToggleableState] == ToggleableState.On
