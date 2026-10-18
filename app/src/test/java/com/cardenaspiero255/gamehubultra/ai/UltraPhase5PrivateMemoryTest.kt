@@ -69,6 +69,7 @@ class UltraPhase5PrivateMemoryTest {
         repo.syncConversation(emptyList(), listOf("Tú: dato privado"), UltraMemoryScope())
         assertTrue(storage.read() != null)
         repo.purgeAllData()
+        repo.clearConversationHistory(UltraMemoryScope()) // queued chat reset after deletion
         assertEquals(null, storage.read())
         assertTrue(repo.snapshot().records.isEmpty())
     }
