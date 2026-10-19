@@ -38,6 +38,21 @@ def warning(message):
     print(f"::warning::{message}")
 
 
+def blocked_auth(error):
+    # Do not leak HTTP response bodies, DSNs or configured credentials.
+    message = (
+        f"{error} Sentry release registration not certified. "
+        "Replace SENTRY_AUTH_TOKEN with a valid scoped token before E2E sign-off."
+    )
+    print(f"::error::{message}")
+    summary = os.environ.get("GITHUB_STEP_SUMMARY", "")
+    if summary:
+        with open(summary, "a", encoding="utf-8") as stream:
+            stream.write("## Sentry registration: AUTH_REJECTED\n\n")
+            stream.write("Release registration and source-map upload are not certified.\n")
+    sys.exit(3)
+
+
 def checked_url(path_or_url):
     if path_or_url.startswith("https://"):
         url = path_or_url
@@ -170,11 +185,7 @@ if not project_id.isdigit():
 try:
     org_slug, project_slug = discover_project(project_id)
 except SentryAuthRejected as exc:
-    notice(
-        f"{exc} Trusted release registration was skipped cleanly; "
-        "runtime telemetry through SENTRY_DSN remains enabled."
-    )
-    sys.exit(0)
+    blocked_auth(exc)
 
 if DISCOVER_ONLY:
     github_env = os.environ.get("GITHUB_ENV", "").strip()
@@ -205,11 +216,7 @@ try:
         if isinstance(item, dict)
     )
 except SentryAuthRejected as exc:
-    notice(
-        f"{exc} Trusted release registration was skipped cleanly; "
-        "runtime telemetry through SENTRY_DSN remains enabled."
-    )
-    sys.exit(0)
+    blocked_auth(exc)
 except RuntimeError as exc:
     warning(f"Could not verify Sentry/GitHub repository link: {exc}")
 
@@ -235,11 +242,7 @@ try:
         payload=payload,
     )
 except SentryAuthRejected as exc:
-    notice(
-        f"{exc} Trusted release registration was skipped cleanly; "
-        "runtime telemetry through SENTRY_DSN remains enabled."
-    )
-    sys.exit(0)
+    blocked_auth(exc)
 
 commit_count = release.get("commitCount", 0) if isinstance(release, dict) else 0
 notice(
