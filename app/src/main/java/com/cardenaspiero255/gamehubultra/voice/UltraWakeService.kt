@@ -120,8 +120,11 @@ class UltraWakeService : Service() {
             preferFastStableDefinitions = true,
             memoryGateway = ultraMemoryStore,
             gameSessionHistory = {
-                SessionCoachSessionStore(applicationContext).readRecentGameSessions()
-            }
+                    SessionCoachSessionStore(applicationContext).readRecentGameSessions()
+                },
+                gamingSessionTelemetry = {
+                    SessionCoachSessionStore(applicationContext).readActiveGamingMeasurementWindow()
+                }
         )
     }
     private val aiAdvisor by aiAdvisorLazy
