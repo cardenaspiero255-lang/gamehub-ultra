@@ -21,6 +21,7 @@ import com.cardenaspiero255.gamehubultra.*
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.*
 import com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch
+import com.cardenaspiero255.gamehubultra.vision.UltraVisualDraftPolicy
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import com.cardenaspiero255.gamehubultra.voice.*
@@ -118,6 +119,8 @@ internal fun VoiceAssistantCard(
     var visualResetKey by remember { mutableIntStateOf(0) }
     var memoryRetentionDays by remember { mutableIntStateOf(30) }
     var chatMessage by remember { mutableStateOf("") }
+    var visualDraftOrigin by remember { mutableStateOf<UltraVisualDraftPolicy.Origin?>(null) }
+    val privacyRevision by UltraPrivacyEpoch.changes.collectAsState()
     var activeVoiceTurn by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val chatSending by queryRunner.isRunning.collectAsStateWithLifecycle()
     var permissionGranted by remember {
@@ -129,7 +132,32 @@ internal fun VoiceAssistantCard(
         )
     }
 
+    LaunchedEffect(privacyRevision, aiContext.selectedGamePackage) {
+        if (!UltraVisualDraftPolicy.canSend(
+                visualDraftOrigin, privacyRevision, aiContext.selectedGamePackage
+            )
+        ) {
+            chatMessage = ""
+            visualDraftOrigin = null
+            showTextChat = false
+            visualResetKey++
+        }
+    }
+
     fun sendTypedChatMessage() {
+        // Observe privacy and game provenance again synchronously at send-time;
+        // a Compose recomposition may not yet have processed an external erase.
+        if (!UltraVisualDraftPolicy.canSend(
+                visualDraftOrigin,
+                UltraPrivacyEpoch.current(),
+                latestAiContext.selectedGamePackage
+            )
+        ) {
+            chatMessage = ""
+            visualDraftOrigin = null
+            showTextChat = false
+            return
+        }
         val message = chatMessage.trim()
         if (!latestAssistantInputEnabled || message.isBlank() || chatSending) return
 
@@ -149,6 +177,7 @@ internal fun VoiceAssistantCard(
         val submission = queryRunner.launch(
             onAccepted = {
                 chatMessage = ""
+                visualDraftOrigin = null
                 latestOnConversationChanged(withUser)
             },
             onFailure = {
@@ -545,6 +574,7 @@ applyNetworkProfile = networkGaming::applyProfile
     fun invalidatePrivateTurns() {
         UltraPrivacyEpoch.invalidate()
         visualResetKey++
+        visualDraftOrigin = null
         queryRunner.cancelActive()
         activeVoiceTurn?.cancel()
         voiceController.stopListening()
@@ -733,7 +763,10 @@ applyNetworkProfile = networkGaming::applyProfile
                     }
                     OutlinedTextField(
                         value = chatMessage,
-                        onValueChange = { chatMessage = it.take(1000) },
+                        onValueChange = {
+                            chatMessage = it.take(1000)
+                            // Continue treating edited OCR text as private until the user sends.
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text(stringResource(R.string.ai_chat_input_label)) },
                         placeholder = { Text(stringResource(R.string.ai_chat_input_hint)) },
@@ -745,7 +778,10 @@ applyNetworkProfile = networkGaming::applyProfile
             confirmButton = {
                 Button(
                     onClick = ::sendTypedChatMessage,
-                    enabled = assistantInputEnabled && chatMessage.isNotBlank() && !chatSending
+                    enabled = assistantInputEnabled && chatMessage.isNotBlank() && !chatSending &&
+                        UltraVisualDraftPolicy.canSend(
+                            visualDraftOrigin, UltraPrivacyEpoch.current(), aiContext.selectedGamePackage
+                        )
                 ) {
                     Text(
                         if (chatSending) {
@@ -761,6 +797,7 @@ applyNetworkProfile = networkGaming::applyProfile
                     onClick = {
                         latestOnConversationChanged(emptyList())
                         chatMessage = ""
+                        visualDraftOrigin = null
                     },
                     enabled = !chatSending
                 ) {
@@ -892,6 +929,10 @@ applyNetworkProfile = networkGaming::applyProfile
                     gamePackage = aiContext.selectedGamePackage,
                     enabled = assistantInputEnabled,
                     onUseRecognizedText = { extracted ->
+                        visualDraftOrigin = UltraVisualDraftPolicy.Origin(
+                            privacyEpoch = UltraPrivacyEpoch.current(),
+                            gamePackage = latestAiContext.selectedGamePackage
+                        )
                         chatMessage = ("Ayúdame a interpretar este texto de una imagen elegida por mí:\n" +
                             extracted.take(800)).take(1000)
                         showTextChat = true
