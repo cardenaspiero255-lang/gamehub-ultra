@@ -100,6 +100,7 @@ class UltraVisualOcrRobolectricTest {
                 UltraVisualReadControl(), CancellationSignal(), recognizeOverride = { "NEVER" }
             )
         }
+        Unit
     }
 
     @Test fun invalidImagePixelsCannotReachRecognizer() = runBlocking {
@@ -124,6 +125,7 @@ class UltraVisualOcrRobolectricTest {
                 CancellationSignal(), recognizeOverride = { "NEVER" }
             )
         }
+        Unit
     }
 
     @Test fun contentProviderCanRejectUnavailableFileWithoutAccidentalCertification() = runBlocking {
@@ -134,6 +136,7 @@ class UltraVisualOcrRobolectricTest {
                 UltraVisualReadControl(), CancellationSignal(), recognizeOverride = { "NEVER" }
             )
         }
+        Unit
     }
 
     @Test fun oversizedDecodedImageIsRejectedBeforeRecognition() = runBlocking {
@@ -144,5 +147,6 @@ class UltraVisualOcrRobolectricTest {
                 UltraVisualReadControl(), CancellationSignal(), recognizeOverride = { "NEVER" }
             )
         }
+        Unit
     }
 }
