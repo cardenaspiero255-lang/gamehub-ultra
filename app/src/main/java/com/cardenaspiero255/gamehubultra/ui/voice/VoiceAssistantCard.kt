@@ -551,7 +551,9 @@ applyNetworkProfile = networkGaming::applyProfile
         chatMessage = ""
     }
 
-    if (showMemoryPrivacy) {
+    // Keep the settings and irreversible deletion confirmation in distinct dialogs.
+    // A single dialog never swaps its action-bar slot hierarchy while displayed.
+    if (showMemoryPrivacy && !showEraseMemoryConfirmation) {
         AlertDialog(
             onDismissRequest = { if (!memoryPrivacyBusy) showMemoryPrivacy = false },
             title = { Text("Memoria privada de Ultra") },
@@ -648,57 +650,64 @@ applyNetworkProfile = networkGaming::applyProfile
                             }
                         }
                     ) { Text("Borrar historial del juego") }
-                    if (!showEraseMemoryConfirmation) {
-                        TextButton(
-                            enabled = !memoryPrivacyBusy,
-                            onClick = { showEraseMemoryConfirmation = true }
-                        ) { Text("Borrar toda mi memoria") }
-                    } else {
-                        Text("Se borrarán conversaciones y recuerdos de todos los juegos. ¿Confirmas?")
-                    }
+                    TextButton(
+                        enabled = !memoryPrivacyBusy,
+                        onClick = { showEraseMemoryConfirmation = true }
+                    ) { Text("Borrar toda mi memoria") }
                     memoryPrivacyNotice?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             },
             confirmButton = {
-                if (showEraseMemoryConfirmation) {
-                    Button(
-                            enabled = !memoryPrivacyBusy,
-                            onClick = {
-                                invalidatePrivateTurns()
-                                memoryPrivacyBusy = true
-                                scope.launch {
-                                    val result = withContext(Dispatchers.IO) {
-                                        runCatching { privateMemoryStore.deleteAllPrivateMemory() }
-                                    }
-                                    memoryPrivacyBusy = false
-                                    showEraseMemoryConfirmation = false
-                                    if (result.isSuccess) {
-                                        memoryConsent = false
-                                        latestOnConversationChanged(emptyList())
-                                        memoryPrivacyNotice = "Memoria cifrada eliminada y consentimiento revocado."
-                                    } else {
-                                        memoryPrivacyNotice = "No pude borrar toda la memoria."
-                                    }
-                                }
+                TextButton(
+                    onClick = { showMemoryPrivacy = false },
+                    enabled = !memoryPrivacyBusy
+                ) { Text("Cerrar") }
+            }
+        )
+    }
+
+    if (showMemoryPrivacy && showEraseMemoryConfirmation) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!memoryPrivacyBusy) showEraseMemoryConfirmation = false
+            },
+            title = { Text("Confirmar borrado de memoria") },
+            text = {
+                Text("Se borrarán conversaciones y recuerdos de todos los juegos. ¿Confirmas?")
+            },
+            confirmButton = {
+                Button(
+                    modifier = Modifier.testTag("ultra-erase-confirm"),
+                    enabled = !memoryPrivacyBusy,
+                    onClick = {
+                        invalidatePrivateTurns()
+                        memoryPrivacyBusy = true
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching { privateMemoryStore.deleteAllPrivateMemory() }
                             }
-                        ) { Text("Borrar definitivamente") }
-                } else {
-                    TextButton(
-                        onClick = { showMemoryPrivacy = false },
-                        enabled = !memoryPrivacyBusy
-                    ) { Text("Cerrar") }
-                }
+                            memoryPrivacyBusy = false
+                            showEraseMemoryConfirmation = false
+                            if (result.isSuccess) {
+                                memoryConsent = false
+                                latestOnConversationChanged(emptyList())
+                                memoryPrivacyNotice =
+                                    "Memoria cifrada eliminada y consentimiento revocado."
+                            } else {
+                                memoryPrivacyNotice = "No pude borrar toda la memoria."
+                            }
+                        }
+                    }
+                ) { Text("Borrar definitivamente") }
             },
             dismissButton = {
-                if (showEraseMemoryConfirmation) {
-                    TextButton(
-                        modifier = Modifier.testTag("ultra-erase-cancel"),
-                        enabled = !memoryPrivacyBusy,
-                        onClick = { showEraseMemoryConfirmation = false }
-                    ) { Text("Cancelar") }
-                }
+                TextButton(
+                    modifier = Modifier.testTag("ultra-erase-cancel"),
+                    enabled = !memoryPrivacyBusy,
+                    onClick = { showEraseMemoryConfirmation = false }
+                ) { Text("Cancelar") }
             }
         )
     }
