@@ -1,0 +1,148 @@
+package com.cardenaspiero255.gamehubultra.vision
+
+import android.content.ContentProvider
+import android.content.ContentValues
+import android.content.pm.ProviderInfo
+import android.database.Cursor
+import android.graphics.Bitmap
+import android.net.Uri
+import android.os.CancellationSignal
+import android.os.ParcelFileDescriptor
+import android.content.res.AssetFileDescriptor
+import com.google.mlkit.vision.common.InputImage
+import java.io.ByteArrayOutputStream
+import java.io.File
+import kotlinx.coroutines.runBlocking
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowContentResolver
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
+
+/** Exercises true ContentResolver/BMP decoding; substitutes OCR inference only. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class UltraVisualOcrRobolectricTest {
+    private class ImageProvider(
+        var bytes: ByteArray,
+        var mime: String? = "image/png",
+        var readable: Boolean = true
+    ) : ContentProvider() {
+        override fun onCreate(): Boolean = true
+        override fun query(uri: Uri, projection: Array<String>?, selection: String?,
+            selectionArgs: Array<String>?, sortOrder: String?): Cursor? = null
+        override fun getType(uri: Uri): String? = mime
+        override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+        override fun delete(uri: Uri, selection: String?, selectionArgs: Array<String>?): Int = 0
+        override fun update(uri: Uri, values: ContentValues?, selection: String?,
+            selectionArgs: Array<String>?): Int = 0
+
+        override fun openAssetFile(uri: Uri, mode: String): AssetFileDescriptor? {
+            if (!readable) return null
+            val temp = File.createTempFile("phase7-ocr-", ".png", context!!.cacheDir)
+            temp.writeBytes(bytes)
+            temp.deleteOnExit()
+            return AssetFileDescriptor(
+                ParcelFileDescriptor.open(temp, ParcelFileDescriptor.MODE_READ_ONLY),
+                0, AssetFileDescriptor.UNKNOWN_LENGTH
+            )
+        }
+    }
+
+    private fun register(provider: ImageProvider): Uri {
+        val authority = "phase7.ocr.test"
+        val app = RuntimeEnvironment.getApplication()
+        provider.attachInfo(app, ProviderInfo().apply { this.authority = authority; exported = false })
+        ShadowContentResolver.registerProviderInternal(authority, provider)
+        return Uri.parse("content://$authority/selected.png")
+    }
+
+    private fun png(width: Int = 4, height: Int = 4): ByteArray {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        return ByteArrayOutputStream().use { output ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+            bitmap.recycle()
+            output.toByteArray()
+        }
+    }
+
+    @Test fun approvedContentProviderWithUnknownLengthCanBeRecognizedLocally() = runBlocking {
+        val uri = register(ImageProvider(png()))
+        var recognizedInput = false
+        val result = UltraVisualOcr.readApprovedImage(
+            RuntimeEnvironment.getApplication(), uri, UltraVisualReadControl(),
+            CancellationSignal(),
+            recognizeOverride = { image: InputImage ->
+                recognizedInput = image.width == 4 && image.height == 4
+                "RESULTADO SOLO LOCAL"
+            }
+        )
+        assertTrue(recognizedInput)
+        assertEquals("RESULTADO SOLO LOCAL", result)
+    }
+
+    @Test fun invalidOrNonImageSchemeIsRejectedBeforeProviderAccess() = runBlocking {
+        assertFailsWith<IllegalArgumentException> {
+            UltraVisualOcr.readApprovedImage(
+                RuntimeEnvironment.getApplication(), Uri.parse("https://evil.invalid/photo"),
+                UltraVisualReadControl(), CancellationSignal(),
+                recognizeOverride = { "NEVER" }
+            )
+        }
+        val uri = register(ImageProvider(png(), mime = "text/html"))
+        assertFailsWith<IllegalArgumentException> {
+            UltraVisualOcr.readApprovedImage(
+                RuntimeEnvironment.getApplication(), uri,
+                UltraVisualReadControl(), CancellationSignal(), recognizeOverride = { "NEVER" }
+            )
+        }
+    }
+
+    @Test fun invalidImagePixelsCannotReachRecognizer() = runBlocking {
+        val uri = register(ImageProvider(byteArrayOf(1, 2, 3)))
+        var invoked = false
+        assertFailsWith<IllegalArgumentException> {
+            UltraVisualOcr.readApprovedImage(
+                RuntimeEnvironment.getApplication(), uri, UltraVisualReadControl(),
+                CancellationSignal(), recognizeOverride = { invoked = true; "NEVER" }
+            )
+        }
+        assertTrue(!invoked)
+    }
+
+    @Test fun revokedConsentBeforeReadingCannotInvokeProvider() = runBlocking {
+        val uri = register(ImageProvider(png()))
+        val control = UltraVisualReadControl()
+        control.revoke()
+        assertFailsWith<java.util.concurrent.CancellationException> {
+            UltraVisualOcr.readApprovedImage(
+                RuntimeEnvironment.getApplication(), uri, control,
+                CancellationSignal(), recognizeOverride = { "NEVER" }
+            )
+        }
+    }
+
+    @Test fun contentProviderCanRejectUnavailableFileWithoutAccidentalCertification() = runBlocking {
+        val uri = register(ImageProvider(png(), readable = false))
+        assertFailsWith<IllegalArgumentException> {
+            UltraVisualOcr.readApprovedImage(
+                RuntimeEnvironment.getApplication(), uri,
+                UltraVisualReadControl(), CancellationSignal(), recognizeOverride = { "NEVER" }
+            )
+        }
+    }
+
+    @Test fun oversizedDecodedImageIsRejectedBeforeRecognition() = runBlocking {
+        val uri = register(ImageProvider(png(width = 4097, height = 1)))
+        assertFailsWith<IllegalArgumentException> {
+            UltraVisualOcr.readApprovedImage(
+                RuntimeEnvironment.getApplication(), uri,
+                UltraVisualReadControl(), CancellationSignal(), recognizeOverride = { "NEVER" }
+            )
+        }
+    }
+}
