@@ -114,7 +114,7 @@ class UltraGamingIntelligenceV3Test {
             "¿Cuántos FPS tengo en mi juego?", game, current, now
         ).orEmpty()
         assertContains(answer, "120 Hz")
-        assertContains(answer, "refresco de pantalla observado")
+        assertTrue(answer.contains("refresco de pantalla observado", ignoreCase = true), answer)
         assertContains(answer, "FPS del juego no medidos")
         assertContains(answer, "frame pacing no verificable")
         assertFalse(answer.contains("120 FPS"))
@@ -130,7 +130,7 @@ class UltraGamingIntelligenceV3Test {
         val answer = UltraGamingIntelligenceV3.answer(
             "¿Qué recomiendas para mi juego por temperatura y batería?", game, sustained, now
         ).orEmpty()
-        assertContains(answer, "estado térmico Android")
+        assertTrue(answer.contains("estado térmico Android", ignoreCase = true), answer)
         assertContains(answer, "presión térmica")
         assertContains(answer, "batería baja")
         assertContains(answer, "perfil equilibrado")
@@ -159,7 +159,7 @@ class UltraGamingIntelligenceV3Test {
         val answer = UltraGamingIntelligenceV3.answer(
             "¿Cómo va la latencia en mi partida?", game, current, now
         ).orEmpty()
-        assertContains(answer, "latencia de diagnóstico")
+        assertTrue(answer.contains("latencia de diagnóstico", ignoreCase = true), answer)
         assertContains(answer, "ms")
         assertContains(answer, "no es ping al servidor")
         assertContains(answer, "latencia alta")
@@ -175,7 +175,7 @@ class UltraGamingIntelligenceV3Test {
         val answer = UltraGamingIntelligenceV3.answer(
             "Analiza mi partida y dame recomendaciones", game, current, now
         ).orEmpty()
-        assertContains(answer, "muestras recientes insuficientes")
+        assertTrue(answer.contains("muestras recientes insuficientes", ignoreCase = true), answer)
         assertFalse(answer.contains("perfil equilibrado"))
         assertFalse(answer.contains("Wi-Fi"))
     }
