@@ -68,6 +68,10 @@ internal fun UltraVoluntaryVisualCard(
     var readControl by remember { mutableStateOf<UltraVisualReadControl?>(null) }
     var resultEpoch by remember { mutableStateOf<Long?>(null) }
     var resultGame by remember { mutableStateOf<String?>(null) }
+    // Initial composition is not a revocation. This prevents a late initial
+    // LaunchedEffect from erasing a user selection started immediately.
+    var observedGame by remember { mutableStateOf(gamePackage) }
+    var observedPrivacyRevision by remember { mutableStateOf(privacyRevision) }
 
     fun revoke() {
         session.revoke()
@@ -108,14 +112,20 @@ internal fun UltraVoluntaryVisualCard(
     ) { uri: Uri? -> handlePickerResult(uri) }
 
     LaunchedEffect(gamePackage) {
-        revoke()
-        notice = ""
+        if (observedGame != gamePackage) {
+            observedGame = gamePackage
+            revoke()
+            notice = ""
+        }
     }
     // React to privacy erasure even when it originates in another component.
-    // The StateFlow is monotonic, preventing stale image text from lingering.
+    // Do not revoke on first composition: only a changed epoch invalidates.
     LaunchedEffect(privacyRevision) {
-        revoke()
-        notice = ""
+        if (observedPrivacyRevision != privacyRevision) {
+            observedPrivacyRevision = privacyRevision
+            revoke()
+            notice = ""
+        }
     }
     LaunchedEffect(enabled) {
         if (!enabled) revoke()
