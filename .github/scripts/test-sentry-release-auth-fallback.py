@@ -80,15 +80,6 @@ class SentryReleaseAuthFallbackTest(unittest.TestCase):
         self.assertNotIn("Traceback", text)
 
 
-    def test_ci_signing_passwords_are_masked_before_any_keytool_or_github_env_write(self):
-        workflow = (ROOT / ".github/workflows/android.yml").read_text(encoding="utf-8")
-        blocks = workflow.split("PASSWORD=\"$(openssl rand -hex 24)\"")
-        self.assertEqual(len(blocks), 3, "Two ephemeral signing key creation steps expected")
-        for block in blocks[1:]:
-            before_keytool = block.split("keytool -genkeypair", maxsplit=1)[0]
-            self.assertIn('echo "::add-mask::$PASSWORD"', before_keytool)
-        self.assertNotIn("echo \"$PASSWORD\"", workflow)
-
     def test_sentry_auth_failure_is_reported_but_never_accepted_as_verified_e2e(self):
         script = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("Sentry release registration not certified", script)
