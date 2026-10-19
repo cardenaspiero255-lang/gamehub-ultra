@@ -1,6 +1,8 @@
 package com.cardenaspiero255.gamehubultra.ui.voice
 
 import android.net.Uri
+import android.os.CancellationSignal
+import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,6 +30,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.cardenaspiero255.gamehubultra.vision.UltraVisualOcr
 import com.cardenaspiero255.gamehubultra.vision.UltraVoluntaryVisualSession
+import com.cardenaspiero255.gamehubultra.vision.UltraVisualPickerLaunch
+import com.cardenaspiero255.gamehubultra.vision.UltraVisualReadControl
 import com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -41,11 +45,15 @@ import kotlinx.coroutines.withContext
 internal fun UltraVoluntaryVisualCard(
     gamePackage: String?,
     enabled: Boolean,
-    onUseRecognizedText: (String) -> Unit
+    onUseRecognizedText: (String) -> Unit,
+    // Overrides are internal hooks for Robolectric security/coverage regressions.
+    pickerOverride: (((Uri?) -> Unit) -> Unit)? = null,
+    ocrOverride: (suspend (Context, Uri, UltraVisualReadControl, CancellationSignal) -> String)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val session = remember { UltraVoluntaryVisualSession() }
+    val launchGate = remember { UltraVisualPickerLaunch() }
     val latestGame by rememberUpdatedState(gamePackage)
     val latestEnabled by rememberUpdatedState(enabled)
     val latestUseText by rememberUpdatedState(onUseRecognizedText)
@@ -57,15 +65,20 @@ internal fun UltraVoluntaryVisualCard(
     var textResult by remember { mutableStateOf("") }
     var notice by remember { mutableStateOf("") }
     var work by remember { mutableStateOf<Job?>(null) }
+    var readControl by remember { mutableStateOf<UltraVisualReadControl?>(null) }
     var resultEpoch by remember { mutableStateOf<Long?>(null) }
     var resultGame by remember { mutableStateOf<String?>(null) }
 
     fun revoke() {
         session.revoke()
+        readControl?.revoke()
+        readControl = null
         work?.cancel()
         work = null
         ticket = null
-        pickerOpen = false
+        // A cancelled system picker still owns its outstanding callback.
+        // Never launch a newer selection until the old callback returns.
+        pickerOpen = launchGate.awaitingCallback
         confirmationOpen = false
         busy = false
         textResult = ""
@@ -73,11 +86,12 @@ internal fun UltraVoluntaryVisualCard(
         resultGame = null
     }
 
-    val picker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
+    fun onPickerResult(uri: Uri?) {
+        // The Android picker does not include a launch nonce in its callback.
+        // The launch gate forbids any overlapping picker, so an old result
+        // cannot be reinterpreted as a fresh user authorization.
+        val id = launchGate.complete(ticket)
         pickerOpen = false
-        val id = ticket
         if (latestEnabled && id != null && uri != null &&
             session.acceptPickedUri(id, uri.toString(), latestGame)
         ) {
@@ -88,6 +102,10 @@ internal fun UltraVoluntaryVisualCard(
             notice = "Selección cancelada o autorización caducada."
         }
     }
+
+    val picker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? -> onPickerResult(uri) }
 
     LaunchedEffect(gamePackage) {
         revoke()
@@ -105,6 +123,7 @@ internal fun UltraVoluntaryVisualCard(
     DisposableEffect(session) {
         onDispose {
             session.revoke()
+            readControl?.revoke()
             work?.cancel()
         }
     }
@@ -123,12 +142,23 @@ internal fun UltraVoluntaryVisualCard(
                 textResult = ""
                 resultEpoch = null
                 resultGame = null
-                ticket = session.beginUserSelection(latestGame)
-                pickerOpen = true
-                notice = ""
-                picker.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
+                val selectedTicket = session.beginUserSelection(latestGame)
+                if (!launchGate.begin(selectedTicket)) {
+                    session.revoke()
+                    ticket = null
+                    notice = "Una selección anterior aún debe cerrarse."
+                } else {
+                    ticket = selectedTicket
+                    pickerOpen = true
+                    notice = ""
+                    if (pickerOverride != null) {
+                        pickerOverride { selectedUri -> onPickerResult(selectedUri) }
+                    } else {
+                        picker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                }
             }
         ) {
             Text(if (busy) "Analizando…" else "Elegir imagen")
@@ -195,11 +225,19 @@ internal fun UltraVoluntaryVisualCard(
                             val acceptedGame = latestGame
                             busy = true
                             notice = "Analizando solo en el dispositivo…"
+                            val signal = CancellationSignal()
+                            val control = UltraVisualReadControl { signal.cancel() }
+                            readControl = control
                             work = scope.launch {
                                 val currentWork = currentCoroutineContext()[Job]
                                 try {
                                     val extracted = withContext(Dispatchers.IO) {
-                                        UltraVisualOcr.readApprovedImage(context, Uri.parse(approved))
+                                        val approvedUri = Uri.parse(approved)
+                                        if (ocrOverride == null) {
+                                            UltraVisualOcr.readApprovedImage(context, approvedUri, control, signal)
+                                        } else {
+                                            ocrOverride(context, approvedUri, control, signal)
+                                        }
                                     }
                                     if (isActive && latestEnabled && UltraPrivacyEpoch.isCurrent(acceptedEpoch) &&
                                         latestGame == acceptedGame
@@ -222,6 +260,8 @@ internal fun UltraVoluntaryVisualCard(
                                         notice = "No fue posible leer esta imagen localmente."
                                     }
                                 } finally {
+                                    control.revoke()
+                                    if (readControl === control) readControl = null
                                     // Revoked results are suppressed, but the matching job
                                     // must always release its busy state, even across epoch changes.
                                     if (work === currentWork) {
