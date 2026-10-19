@@ -83,7 +83,7 @@ class UltraVisualDraftRevocationRobolectricTest {
     }
 
     private fun prepareVisualDraft() {
-        rule.onNodeWithTag("ultra-visual-select-image").performScrollTo().performClick()
+        rule.onNodeWithTag("ultra-visual-select-image").performClick()
         rule.runOnIdle { callback?.invoke(Uri.parse("content://media/picker/authorized.png")) }
         rule.onNodeWithTag("ultra-visual-confirm").performClick()
         rule.waitUntil(12000) {
