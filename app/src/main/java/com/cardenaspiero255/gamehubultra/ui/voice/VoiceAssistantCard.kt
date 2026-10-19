@@ -774,7 +774,7 @@ applyNetworkProfile = networkGaming::applyProfile
                             chatMessage = it.take(1000)
                             // Continue treating edited OCR text as private until the user sends.
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("ultra-chat-private-draft"),
                         label = { Text(stringResource(R.string.ai_chat_input_label)) },
                         placeholder = { Text(stringResource(R.string.ai_chat_input_hint)) },
                         enabled = assistantInputEnabled && !chatSending,
