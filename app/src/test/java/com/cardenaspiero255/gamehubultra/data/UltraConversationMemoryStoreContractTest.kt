@@ -149,7 +149,7 @@ class UltraConversationMemoryStoreContractTest {
         f.store.syncConversation(emptyList(), listOf("Tú: partida A"), gameA)
         f.store.syncConversation(emptyList(), listOf("Tú: partida B"), gameB)
         f.store.syncConversation(emptyList(), listOf("Tú: sin juego"), global)
-        f.store.syncConversation(emptyList(), listOf("Tú: otro usuario"), UltraMemoryScope("otro", "game.a"))
+        f.store.syncConversation(emptyList(), listOf("Tú: otro usuario"), UltraMemoryScope("otro"))
         assertTrue(f.store.handleCommand("recuerda que prefiero jugar X4", gameA)!!.contains("recordar"))
         f.store.clearConversationHistory(gameA)
         assertTrue(f.store.recentConversationLines(10, gameA).isEmpty())
