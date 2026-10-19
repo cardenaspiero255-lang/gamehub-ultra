@@ -90,13 +90,19 @@ class UltraVisualDraftRevocationRobolectricTest {
             rule.onAllNodesWithText("ULTRA TEXTO PRIVADO").fetchSemanticsNodes().isNotEmpty()
         }
         rule.onNodeWithTag("ultra-visual-use-text").performClick()
-        rule.onNodeWithText("Ultra", substring = false).assertExists()
+        rule.waitUntil(12000) {
+            rule.onAllNodesWithTag("ultra-chat-private-draft")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithTag("ultra-chat-private-draft")
+            .assertTextContains("Ayúdame a interpretar", substring = true)
     }
 
     @Test fun externalMemoryErasureRemovesVisualDraftFromParentChat() {
         mount()
         prepareVisualDraft()
-        rule.onNodeWithText("Ayúdame a interpretar", substring = true).assertExists()
+        rule.onNodeWithTag("ultra-chat-private-draft")
+            .assertTextContains("Ayúdame a interpretar", substring = true)
         rule.runOnIdle { UltraPrivacyEpoch.invalidate() }
         rule.waitUntil(12000) {
             rule.onAllNodesWithText("Ayúdame a interpretar", substring = true)
