@@ -1,12 +1,16 @@
 package com.cardenaspiero255.gamehubultra.vision
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.CancellationSignal
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -76,14 +80,18 @@ internal object UltraVisualOcr {
         val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
             ?: throw IllegalArgumentException("The selected data is not a valid image")
         control.ensureActive()
+        // Normalize the EXIF orientation of JPEG/HEIF photographs before both
+        // hermetic OCR and the ML Kit path. The image data never leaves memory.
+        val oriented = normalizeBitmapOrientation(bitmap, exifOrientation(imageBytes))
+        control.ensureActive()
         if (recognizeOverride != null) {
-            // Hermetic tests exercise the real ContentResolver and BitmapFactory
-            // without bootstrapping Google's ML Kit singleton in Robolectric.
-            val text = recognizeOverride(bitmap)
+            // Hermetic tests exercise ContentResolver, BitmapFactory and EXIF
+            // without bootstrapping the Google ML Kit singleton in Robolectric.
+            val text = recognizeOverride(oriented)
             control.ensureActive()
             return text.take(1000)
         }
-        val image = InputImage.fromBitmap(bitmap, 0)
+        val image = InputImage.fromBitmap(oriented, 0)
         return suspendCancellableCoroutine { continuation ->
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             val closed = AtomicBoolean(false)
@@ -121,5 +129,47 @@ internal object UltraVisualOcr {
     private fun matchesAsciiAt(data: ByteArray, offset: Int, value: String): Boolean =
         data.size >= offset + value.length &&
             value.indices.all { i -> data[offset + i] == value[i].code.toByte() }
+
+    private fun exifOrientation(data: ByteArray): Int {
+        // PNG, GIF, BMP and WebP are handled by their decoded pixel orientation.
+        // ExifInterface can parse EXIF for JPEG and ISO BMFF HEIF/AVIF.
+        val jpeg = data.size >= 3 && data[0] == 0xff.toByte() &&
+            data[1] == 0xd8.toByte() && data[2] == 0xff.toByte()
+        val isoBmff = matchesAsciiAt(data, 4, "ftyp")
+        if (!jpeg && !isoBmff) return ExifInterface.ORIENTATION_NORMAL
+        return runCatching {
+            ByteArrayInputStream(data).use { input ->
+                ExifInterface(input).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL
+                )
+            }
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+    }
+
+    /** Normalize all eight EXIF orientations before delivering pixels to OCR. */
+    internal fun normalizeBitmapOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
+        val transform = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> transform.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> transform.postRotate(180f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> transform.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                transform.postRotate(90f)
+                transform.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_ROTATE_90 -> transform.postRotate(90f)
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                transform.postRotate(270f)
+                transform.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_ROTATE_270 -> transform.postRotate(270f)
+            else -> return bitmap
+        }
+        return Bitmap.createBitmap(
+            bitmap, 0, 0, bitmap.width, bitmap.height, transform, true
+        )
+    }
+
 
 }
