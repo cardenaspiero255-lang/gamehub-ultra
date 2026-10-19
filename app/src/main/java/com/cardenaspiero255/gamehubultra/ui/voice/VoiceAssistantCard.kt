@@ -22,6 +22,7 @@ import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.*
 import com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch
 import com.cardenaspiero255.gamehubultra.vision.UltraVisualDraftPolicy
+import com.cardenaspiero255.gamehubultra.vision.UltraVisualReadControl
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import com.cardenaspiero255.gamehubultra.voice.*
@@ -68,7 +69,10 @@ internal fun VoiceAssistantCard(
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
     assistantInputEnabled: Boolean,
-    startListeningRequest: Int = 0
+    startListeningRequest: Int = 0,
+    // Internal-only seams for hermetic Compose privacy regressions.
+    visualPickerOverride: (((android.net.Uri?) -> Unit) -> Unit)? = null,
+    visualOcrOverride: (suspend (android.content.Context, android.net.Uri, UltraVisualReadControl, android.os.CancellationSignal) -> String)? = null
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -928,6 +932,8 @@ applyNetworkProfile = networkGaming::applyProfile
                 UltraVoluntaryVisualCard(
                     gamePackage = aiContext.selectedGamePackage,
                     enabled = assistantInputEnabled,
+                    pickerOverride = visualPickerOverride,
+                    ocrOverride = visualOcrOverride,
                     onUseRecognizedText = { extracted ->
                         visualDraftOrigin = UltraVisualDraftPolicy.Origin(
                             privacyEpoch = UltraPrivacyEpoch.current(),
