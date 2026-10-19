@@ -21,7 +21,10 @@ test('Core gate requires 150k executed checks across exactly 15 independent shar
  assert.equal(shards.MATRIX_CASES,500500);
  assert.equal(shards.MINIMUM,500000);
  assert.equal(shards.BASELINE_B0_TESTS,10242);
- assert.equal(shards.BASELINE_B1_TESTS,11802);
+ // 11 newly registered Post-CI state tests are executed in the b1 baseline.
+ const postCiStateTests=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_post_ci_state.test.cjs'),'utf8');
+ assert.equal((postCiStateTests.match(/^test\(/gm)||[]).length,11);
+ assert.equal(shards.BASELINE_B1_TESTS,11802+11);
  assert.match(workflow,/\.github\/sentinel-fixtures\/\*\*/);
  const selfReview=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-self-review.yml'),'utf8');
  assert.equal(selfReview.split(".github/sentinel-fixtures/**").length-1,2);

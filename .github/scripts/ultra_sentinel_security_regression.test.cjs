@@ -102,7 +102,18 @@ test('automatic and post-CI reviewers fail closed on untrusted CI without exact 
    assert.match(code,/if \(supplyChain\.coverage\.partial\) core\.setFailed/);
    assert.match(code,/if \(evidence\.coverage\.partial\) core\.setFailed/);
   }else{
-   assert.match(code,/if\s*\(\s*(?:ci\.status===['"]UNTRUSTED['"]|ci\.status!==['"]PASS['"])\s*\)\s*core\.setFailed/);
+   const {postCiDisposition}=require('./ultra_sentinel_post_ci_state.cjs');
+   assert.match(code,/postCiDisposition\(args\)/);
+   assert.match(code,/if\(decision\.action==='BLOCK'\)\s*core\.setFailed/);
+   assert.match(code,/ciStatuses:verified\.map\(x=>x\.ci\.status\)/);
+   for(const status of ['UNTRUSTED','FAILED','UNKNOWN']){
+    const d=postCiDisposition({sourceSha:'a'.repeat(40),linkedCount:1,
+     eligibleCount:1,ciStatuses:[status]});
+    assert.equal(d.action,'BLOCK',status);
+    assert.equal(d.attested,false,status);
+   }
+   assert.equal(postCiDisposition({sourceSha:'a'.repeat(40),linkedCount:1,
+    eligibleCount:1,ciStatuses:['PASS'],apiComplete:false}).action,'BLOCK');
   }
  }
 });

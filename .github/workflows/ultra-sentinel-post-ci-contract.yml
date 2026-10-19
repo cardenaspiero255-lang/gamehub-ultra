@@ -1,0 +1,36 @@
+name: Ultra Sentinel Post-CI State Tests
+# Unprivileged PR-head regression tests; NOT a merge authorization.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/scripts/ultra_sentinel_post_ci_state.cjs'
+      - '.github/scripts/ultra_sentinel_post_ci_state.test.cjs'
+      - '.github/workflows/ultra-sentinel-sss-post-ci.yml'
+      - '.github/workflows/ultra-sentinel-post-ci-contract.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ultra-sentinel-post-ci-tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  post-ci-state-regressions:
+    name: Post-CI state transition regressions
+    runs-on: ubuntu-22.04
+    timeout-minutes: 3
+    steps:
+      - name: Checkout PR test sources without credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Verify Node syntax and behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          node --check .github/scripts/ultra_sentinel_post_ci_state.cjs
+          node --check .github/scripts/ultra_sentinel_post_ci_state.test.cjs
+          node --test .github/scripts/ultra_sentinel_post_ci_state.test.cjs
