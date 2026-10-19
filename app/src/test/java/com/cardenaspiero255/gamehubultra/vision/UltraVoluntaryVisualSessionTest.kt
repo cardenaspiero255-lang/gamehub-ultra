@@ -28,7 +28,7 @@ class UltraVoluntaryVisualSessionTest {
         assertTrue(gate.awaitingConfirmation(ticket, "game.a"))
         // No image bytes, URI or metadata are exposed through the status API.
         assertFalse(gate.toString().contains(uri))
-        assertEquals(uri, gate.consumeAfterUserConfirmation(ticket, "game.a"))
+        assertEquals(uri, gate.consumeAfterUserConfirmation(ticket, "game.a")?.uri)
         assertFalse(gate.awaitingConfirmation(ticket, "game.a"))
         assertNull(gate.consumeAfterUserConfirmation(ticket, "game.a"))
     }
@@ -84,7 +84,7 @@ class UltraVoluntaryVisualSessionTest {
         assertFalse(gate.acceptPickedUri(old, uri, "game.a"))
         assertTrue(gate.acceptPickedUri(newer, uri, "game.a"))
         assertNull(gate.consumeAfterUserConfirmation(old, "game.a"))
-        assertEquals(uri, gate.consumeAfterUserConfirmation(newer, "game.a"))
+        assertEquals(uri, gate.consumeAfterUserConfirmation(newer, "game.a")?.uri)
     }
 
     @Test fun aPrivacyEraseEpochInvalidatesPickerCallbacks() {
@@ -152,7 +152,7 @@ class UltraVoluntaryVisualSessionTest {
         val next = gate.beginUserSelection(null)
         assertNull(gate.consumeAfterUserConfirmation(old, null))
         assertTrue(gate.acceptPickedUri(next, uri, null))
-        assertEquals(uri, gate.consumeAfterUserConfirmation(next, null))
+        assertEquals(uri, gate.consumeAfterUserConfirmation(next, null)?.uri)
     }
 
     @Test fun confirmingWrongTicketNeverLeaksTheValidUri() {
