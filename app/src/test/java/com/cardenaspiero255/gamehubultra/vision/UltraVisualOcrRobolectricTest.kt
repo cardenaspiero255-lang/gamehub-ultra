@@ -96,7 +96,9 @@ class UltraVisualOcrRobolectricTest {
                 recognizeOverride = { "NEVER" }
             )
         }
-        val uri = register(ImageProvider(png(), mime = "text/html"))
+        // A lying text/html MIME is not sufficient to classify the pixels.
+        // Reject truly non-image bytes through the bounded signature/decoder.
+        val uri = register(ImageProvider(ByteArray(64) { 0x42 }, mime = "text/html"))
         assertFailsWith<IllegalArgumentException> {
             UltraVisualOcr.readApprovedImage(
                 RuntimeEnvironment.getApplication(), uri,
