@@ -45,6 +45,7 @@ internal fun UltraVoluntaryVisualCard(
     val scope = rememberCoroutineScope()
     val session = remember { UltraVoluntaryVisualSession() }
     val latestGame by rememberUpdatedState(gamePackage)
+    val latestEnabled by rememberUpdatedState(enabled)
     val latestUseText by rememberUpdatedState(onUseRecognizedText)
     var ticket by remember { mutableStateOf<Long?>(null) }
     var pickerOpen by remember { mutableStateOf(false) }
@@ -54,6 +55,7 @@ internal fun UltraVoluntaryVisualCard(
     var notice by remember { mutableStateOf("") }
     var work by remember { mutableStateOf<Job?>(null) }
     var resultEpoch by remember { mutableStateOf<Long?>(null) }
+    var resultGame by remember { mutableStateOf<String?>(null) }
 
     fun revoke() {
         session.revoke()
@@ -65,6 +67,7 @@ internal fun UltraVoluntaryVisualCard(
         busy = false
         textResult = ""
         resultEpoch = null
+        resultGame = null
     }
 
     val picker = rememberLauncherForActivityResult(
@@ -72,7 +75,7 @@ internal fun UltraVoluntaryVisualCard(
     ) { uri: Uri? ->
         pickerOpen = false
         val id = ticket
-        if (id != null && uri != null &&
+        if (latestEnabled && id != null && uri != null &&
             session.acceptPickedUri(id, uri.toString(), latestGame)
         ) {
             confirmationOpen = true
@@ -86,6 +89,9 @@ internal fun UltraVoluntaryVisualCard(
     LaunchedEffect(gamePackage) {
         revoke()
         notice = ""
+    }
+    LaunchedEffect(enabled) {
+        if (!enabled) revoke()
     }
     DisposableEffect(session) {
         onDispose {
@@ -107,6 +113,7 @@ internal fun UltraVoluntaryVisualCard(
             onClick = {
                 textResult = ""
                 resultEpoch = null
+                resultGame = null
                 ticket = session.beginUserSelection(latestGame)
                 pickerOpen = true
                 notice = ""
@@ -128,13 +135,18 @@ internal fun UltraVoluntaryVisualCard(
         if (notice.isNotBlank()) {
             Text(notice, style = MaterialTheme.typography.bodySmall)
         }
-        if (textResult.isNotBlank()) {
+        if (textResult.isNotBlank() && resultEpoch == UltraPrivacyEpoch.current() &&
+            resultGame == gamePackage
+        ) {
             Text(textResult, style = MaterialTheme.typography.bodySmall)
             TextButton(
                 modifier = Modifier.testTag("ultra-visual-use-text"),
-                enabled = enabled && !busy && resultEpoch == UltraPrivacyEpoch.current(),
+                enabled = enabled && !busy && resultEpoch == UltraPrivacyEpoch.current() &&
+                    resultGame == gamePackage,
                 onClick = {
-                    if (resultEpoch == UltraPrivacyEpoch.current()) {
+                    if (resultEpoch == UltraPrivacyEpoch.current() &&
+                        resultGame == latestGame && latestEnabled
+                    ) {
                         latestUseText(textResult)
                     }
                 }
@@ -158,6 +170,7 @@ internal fun UltraVoluntaryVisualCard(
             confirmButton = {
                 TextButton(
                     modifier = Modifier.testTag("ultra-visual-confirm"),
+                    enabled = enabled,
                     onClick = {
                         val id = ticket
                         val approved = id?.let {
@@ -178,11 +191,12 @@ internal fun UltraVoluntaryVisualCard(
                                     val extracted = withContext(Dispatchers.IO) {
                                         UltraVisualOcr.readApprovedImage(context, Uri.parse(approved))
                                     }
-                                    if (isActive && UltraPrivacyEpoch.isCurrent(acceptedEpoch) &&
+                                    if (isActive && latestEnabled && UltraPrivacyEpoch.isCurrent(acceptedEpoch) &&
                                         latestGame == acceptedGame
                                     ) {
                                         textResult = extracted.trim().take(1000)
                                         resultEpoch = acceptedEpoch
+                                        resultGame = acceptedGame
                                         notice = if (textResult.isBlank()) {
                                             "No se detectó texto en la imagen."
                                         } else {
@@ -198,7 +212,7 @@ internal fun UltraVoluntaryVisualCard(
                                         notice = "No fue posible leer esta imagen localmente."
                                     }
                                 } finally {
-                                    if (isActive && UltraPrivacyEpoch.isCurrent(acceptedEpoch) &&
+                                    if (isActive && latestEnabled && UltraPrivacyEpoch.isCurrent(acceptedEpoch) &&
                                         latestGame == acceptedGame
                                     ) busy = false
                                 }
