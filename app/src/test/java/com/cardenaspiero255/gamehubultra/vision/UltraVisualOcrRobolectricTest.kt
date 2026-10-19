@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.content.pm.ProviderInfo
 import android.database.Cursor
 import android.graphics.Bitmap
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
@@ -70,6 +71,49 @@ class UltraVisualOcrRobolectricTest {
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
             bitmap.recycle()
             output.toByteArray()
+        }
+    }
+
+    @Test fun EXIFRotation90NormalizesBitmapDimensionsAndCornerPixels() {
+        val source = Bitmap.createBitmap(3, 2, Bitmap.Config.ARGB_8888)
+        source.setPixel(0, 0, 0xff123456.toInt())
+        source.setPixel(2, 1, 0xffabcdef.toInt())
+        val oriented = UltraVisualOcr.normalizeBitmapOrientation(
+            source, ExifInterface.ORIENTATION_ROTATE_90
+        )
+        assertEquals(2, oriented.width)
+        assertEquals(3, oriented.height)
+        assertEquals(0xff123456.toInt(), oriented.getPixel(1, 0))
+        assertEquals(0xffabcdef.toInt(), oriented.getPixel(0, 2))
+    }
+
+    @Test fun EXIFRotation180And270AreAppliedBeforeRecognition() {
+        val source = Bitmap.createBitmap(3, 2, Bitmap.Config.ARGB_8888)
+        val rotated180 = UltraVisualOcr.normalizeBitmapOrientation(
+            source, ExifInterface.ORIENTATION_ROTATE_180
+        )
+        assertEquals(3, rotated180.width)
+        assertEquals(2, rotated180.height)
+        val rotated270 = UltraVisualOcr.normalizeBitmapOrientation(
+            source, ExifInterface.ORIENTATION_ROTATE_270
+        )
+        assertEquals(2, rotated270.width)
+        assertEquals(3, rotated270.height)
+        assertTrue(UltraVisualOcr.normalizeBitmapOrientation(
+            source, ExifInterface.ORIENTATION_NORMAL
+        ) === source)
+    }
+
+    @Test fun EXIFFlippedAndTransposedImagesPreserveExactPixelCount() {
+        val source = Bitmap.createBitmap(4, 2, Bitmap.Config.ARGB_8888)
+        for (orientation in listOf(
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL,
+            ExifInterface.ORIENTATION_FLIP_VERTICAL,
+            ExifInterface.ORIENTATION_TRANSPOSE,
+            ExifInterface.ORIENTATION_TRANSVERSE
+        )) {
+            val oriented = UltraVisualOcr.normalizeBitmapOrientation(source, orientation)
+            assertEquals(8, oriented.width * oriented.height)
         }
     }
 
