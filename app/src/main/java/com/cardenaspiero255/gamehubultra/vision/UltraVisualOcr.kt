@@ -13,7 +13,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 
 /** User-approved, in-process text recognition; no network request or persistence. */
 internal object UltraVisualOcr {
-    private const val MAX_BYTES = 8L * 1024L * 1024L
     private const val MAX_SIDE = 4096
 
     suspend fun readApprovedImage(context: Context, uri: Uri): String {
@@ -21,23 +20,23 @@ internal object UltraVisualOcr {
             "A system-selected image is required"
         }
         val resolver = context.contentResolver
-        require(resolver.getType(uri)?.startsWith("image/") == true) {
+        val declaredType = resolver.getType(uri)
+        require(declaredType == null || declaredType.startsWith("image/")) {
             "The selected content must be an image"
         }
-        val byteCount = resolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
-        require(byteCount in 1..MAX_BYTES) {
-            "The selected image is too large or has an unknown size"
+        // Photo-picker providers may expose an unknown AssetFileDescriptor length.
+        // Read exactly once under a strict limit before decoding the image.
+        val imageBytes = resolver.openInputStream(uri)?.use { stream ->
+            UltraBoundedImageBytes.read(stream)
+        } ?: throw IllegalArgumentException("The selected image is unavailable")
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, bounds)
+        require(bounds.outWidth in 1..MAX_SIDE && bounds.outHeight in 1..MAX_SIDE) {
+            "The selected image dimensions are not supported"
         }
-        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        val dimensionsRead = resolver.openInputStream(uri)?.use { stream ->
-            BitmapFactory.decodeStream(stream, null, options)
-            true
-        } ?: false
-        require(dimensionsRead && options.outWidth in 1..MAX_SIDE &&
-            options.outHeight in 1..MAX_SIDE
-        ) { "The selected image dimensions are not supported" }
-
-        val image = InputImage.fromFilePath(context, uri)
+        val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+            ?: throw IllegalArgumentException("The selected data is not a valid image")
+        val image = InputImage.fromBitmap(bitmap, 0)
         return suspendCancellableCoroutine { continuation ->
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             val closed = AtomicBoolean(false)
