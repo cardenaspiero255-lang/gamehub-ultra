@@ -32,6 +32,50 @@ class GameHubAiAdvisorTest {
     )
 
     @Test
+    fun phase6UsesCurrentGameMeasurementsBeforeGenerativeClaims() {
+        val now = System.currentTimeMillis()
+        val samples = (1..4).map { index ->
+            com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot(
+                timestampMillis = now - index * 1_000L,
+                batteryPercent = 64,
+                thermalStatus = 2,
+                thermalHeadroom = null,
+                refreshRateHz = 120f,
+                latencyMs = 42L
+            )
+        }
+        val advisor = GameHubAiAdvisor(
+            gamingSessionTelemetry = {
+                com.cardenaspiero255.gamehubultra.domain.UltraGamingMeasurementWindow(
+                    packageName = "com.example.game",
+                    startedAtMillis = now - 30_000L,
+                    endedAtMillis = null,
+                    samples = samples
+                )
+            }
+        )
+        val voice = assertNotNull(advisor.generalKnowledgeChatOrNull(
+            "¿Cuántos FPS tengo en mi juego?", healthyContext, emptyList()
+        ))
+        assertTrue(voice.contains("120 Hz"), voice)
+        assertTrue(voice.contains("FPS del juego no medidos"), voice)
+        assertFalse(voice.contains("120 FPS"), voice)
+
+        val typed = advisor.chat(
+            "¿Cómo está la latencia en mi partida?", healthyContext, emptyList()
+        )
+        assertTrue(typed.contains("42 ms"), typed)
+        assertTrue(typed.contains("no es ping al servidor"), typed)
+
+        val otherGame = advisor.generalKnowledgeChatOrNull(
+            "¿Cómo están mis FPS en mi juego?",
+            healthyContext.copy(selectedGamePackage = "com.example.other"),
+            emptyList()
+        )
+        assertTrue(otherGame.orEmpty().contains("No tengo una sesión activa"), otherGame.orEmpty())
+    }
+
+    @Test
     fun localSessionMemoryIsAnswerableBeforeGenerativeResearch() {
         val advisor = GameHubAiAdvisor(
             gameSessionHistory = {

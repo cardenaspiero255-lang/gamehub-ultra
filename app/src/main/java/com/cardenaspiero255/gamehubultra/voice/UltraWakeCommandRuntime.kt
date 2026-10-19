@@ -18,6 +18,8 @@ import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameAliasStateRepository
 import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
+import com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore
+import com.cardenaspiero255.gamehubultra.domain.UltraGamingIntelligenceV3
 import com.cardenaspiero255.gamehubultra.data.effectiveProfileForSelection
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
@@ -58,6 +60,19 @@ internal class UltraWakeCommandRuntime(
             batteryPercent = diagnostics.battery.percent,
             thermalLabel = voiceThermalLabel(diagnostics.thermal.status)
         )
+        // Personal gaming diagnostics must use measured Session Coach samples,
+        // before the legacy one-shot status responder (which has no frame timings).
+        // Never substitute display Hz for FPS or diagnostic latency for server ping.
+        val gamingMeasurement = runCatching {
+            SessionCoachSessionStore(context.applicationContext)
+                .readActiveGamingMeasurementWindow()
+        }.getOrNull()
+        UltraGamingIntelligenceV3.answer(
+            query = transcript,
+            selectedGamePackage = selectedGamePackage,
+            window = gamingMeasurement
+        )?.let { return it }
+
         val inSessionResponse = UltraInSessionVoiceResponder.respond(
             query = transcript,
             metrics = UltraSessionMetricsFactory.fromRuntime(

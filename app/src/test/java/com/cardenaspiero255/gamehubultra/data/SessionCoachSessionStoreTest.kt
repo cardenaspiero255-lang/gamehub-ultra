@@ -109,6 +109,24 @@ class SessionCoachSessionStoreTest {
     }
 
     @Test
+    fun phase6ReadOnlyWindowReflectsOnlyActiveMeasuredSession() {
+        val store = SessionCoachSessionStore(context)
+        assertNull(store.readActiveGamingMeasurementWindow())
+        assertTrue(store.beginSession("phase6", "game.phase6", 1_000L))
+        val measurement = snapshot(2_000L, 90)
+        store.appendSnapshot("phase6", measurement)
+        val active = assertNotNull(store.readActiveGamingMeasurementWindow())
+        assertEquals("game.phase6", active.packageName)
+        assertEquals(1_000L, active.startedAtMillis)
+        assertNull(active.endedAtMillis)
+        assertEquals(listOf(measurement), active.samples)
+
+        store.finishActiveSession(3_000L)
+        assertNull(store.readActiveGamingMeasurementWindow())
+        assertNotNull(store.readLastCompletedSession())
+    }
+
+    @Test
     fun sessionLifecyclePersistsPreMidAndPostData() {
         val store = SessionCoachSessionStore(context, maxSamples = 4)
         assertFalse(store.hasActiveSession())

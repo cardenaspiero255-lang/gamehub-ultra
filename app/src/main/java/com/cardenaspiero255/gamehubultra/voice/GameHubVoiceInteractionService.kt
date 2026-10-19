@@ -67,8 +67,11 @@ private class GameHubVoiceInteractionSession(context: Context) :
         modelAdapter = GeminiNanoLocalAiModelAdapter(),
         preferFastStableDefinitions = true,
         gameSessionHistory = {
-            SessionCoachSessionStore(getContext().applicationContext).readRecentGameSessions()
-        }
+                    SessionCoachSessionStore(getContext().applicationContext).readRecentGameSessions()
+                },
+                gamingSessionTelemetry = {
+                    SessionCoachSessionStore(getContext().applicationContext).readActiveGamingMeasurementWindow()
+                }
     )
     private val aliasRepository by lazy {
         GameHubProductionComposition.aliasRepository(getContext().applicationContext)

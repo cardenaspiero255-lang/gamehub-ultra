@@ -3,6 +3,8 @@ package com.cardenaspiero255.gamehubultra.ai
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.UltraRecordedGameSession
 import com.cardenaspiero255.gamehubultra.domain.UltraSessionHistoryIntelligence
+import com.cardenaspiero255.gamehubultra.domain.UltraGamingIntelligenceV3
+import com.cardenaspiero255.gamehubultra.domain.UltraGamingMeasurementWindow
 import com.cardenaspiero255.gamehubultra.voice.UltraOnDeviceVoiceIntentResolver
 import com.cardenaspiero255.gamehubultra.voice.NaturalLanguageIntentResolver
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommand
@@ -17,7 +19,8 @@ class GameHubAiAdvisor(
     private val gameSessionHistory: (() -> List<UltraRecordedGameSession>)? = null,
     // Opt in only in production: preserve model-first semantics for existing
     // embeddings until their caller explicitly accepts concise fast answers.
-    private val preferFastStableDefinitions: Boolean = false
+    private val preferFastStableDefinitions: Boolean = false,
+    private val gamingSessionTelemetry: (() -> UltraGamingMeasurementWindow?)? = null
 ) : UltraAssistantGateway {
 
     override fun hasLocalModelProvider(): Boolean = modelAdapter != null
@@ -35,6 +38,7 @@ class GameHubAiAdvisor(
         conversation: List<String>
     ): String? {
         UltraFrontierWorldStateRegistry.update(context)
+        measuredGamingAnswerOrNull(message, context)?.let { return it }
         sessionMemoryAnswerOrNull(message, context)?.let { return it }
         verifiedStableResponseForReportedVoiceIssue(message)?.let { return it }
 
@@ -89,6 +93,23 @@ class GameHubAiAdvisor(
         }
 
         return deterministicAdvice(question, context, memories)
+    }
+
+    /**
+     * Read-only live diagnostics. The measurement engine rejects stale samples,
+     * mismatched games and generic third-party performance questions.
+     */
+    private fun measuredGamingAnswerOrNull(
+        message: String,
+        context: GameHubAiContext
+    ): String? {
+        val provider = gamingSessionTelemetry ?: return null
+        val window = runCatching { provider() }.getOrNull()
+        return UltraGamingIntelligenceV3.answer(
+            query = message,
+            selectedGamePackage = context.selectedGamePackage,
+            window = window
+        )
     }
 
     private fun sessionMemoryAnswerOrNull(
@@ -161,6 +182,7 @@ class GameHubAiAdvisor(
         if (memoryCommandResponse != null) return memoryCommandResponse
 
         // Factual gameplay memory wins over any generative answer.
+        measuredGamingAnswerOrNull(message, context)?.let { return it }
         sessionMemoryAnswerOrNull(message, context)?.let { return it }
         // Avoid waiting for Nano on a safe, narrow offline answer or a
         // non-executable voice command: the user must hear an acknowledgement.
