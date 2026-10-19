@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra.vision
 
+import com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -70,6 +71,26 @@ class UltraVisualReadControlTest {
         assertTrue(cancelled)
         assertTrue(control.isRevoked)
         assertFailsWith<CancellationException> { control.attach(ByteArrayInputStream(byteArrayOf(1))) }
+    }
+
+    @Test fun realEpochEraseBetweenUserConfirmationAndProviderReadCannotReauthorizeOldImage() {
+        val gate = UltraVoluntaryVisualSession(
+            currentPrivacyEpoch = UltraPrivacyEpoch::current,
+            monotonicMillis = { 5L }
+        )
+        val ticket = gate.beginUserSelection("game.a")
+        assertTrue(gate.acceptPickedUri(ticket, "content://media/picker/old.png", "game.a"))
+        val approved = gate.consumeAfterUserConfirmation(ticket, "game.a")
+        assertTrue(approved != null)
+        var providerCancelled = false
+        val control = UltraVisualReadControl(
+            cancelProvider = { providerCancelled = true },
+            isConsentCurrent = { UltraPrivacyEpoch.isCurrent(approved.privacyEpoch) }
+        )
+        UltraPrivacyEpoch.invalidate()
+        assertFailsWith<CancellationException> { control.ensureActive() }
+        assertTrue(providerCancelled)
+        assertTrue(control.isRevoked)
     }
 
     @Test fun repeatedRevocationIsIdempotentAndDoesNotCloseUnrelatedStream() {
