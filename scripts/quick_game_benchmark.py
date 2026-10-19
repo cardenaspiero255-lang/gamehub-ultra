@@ -112,7 +112,10 @@ def parse_surface_timestats(text: str, package: str, layer_name: str | None = No
     """
     validate_package(package)
     grouped: dict[tuple[str, str | None], list[tuple[int, float | None, str]]] = {}
-    for section in re.split(r"(?=^layerName\s*=)", text, flags=re.MULTILINE):
+    # Modern AOSP writes uid before layerName, while older dumps can place uid
+    # inside the layer block. A split at layerName must not steal the NEXT uid.
+    sections = re.split(r"(?=^layerName\s*=)", text, flags=re.MULTILINE)
+    for index, section in enumerate(sections[1:], 1):
         name = _field(section, "layerName")
         if not name:
             continue
@@ -135,7 +138,11 @@ def parse_surface_timestats(text: str, package: str, layer_name: str | None = No
         except ValueError:
             fps = float("nan")
         valid_fps = fps if math.isfinite(fps) and 1 <= fps <= 360 else None
-        grouped.setdefault((name, _field(section, "uid")), []).append((frames, valid_fps, section))
+        before_layer = sections[index - 1]
+        prior_uid = re.search(r"(?:^|\n)uid\s*=\s*(\d+)\s*\n$", before_layer)
+        header = section.split("totalFrames", 1)[0]
+        uid = prior_uid.group(1) if prior_uid else _field(header, "uid")
+        grouped.setdefault((name, uid), []).append((frames, valid_fps, section))
 
     if not grouped:
         return None
