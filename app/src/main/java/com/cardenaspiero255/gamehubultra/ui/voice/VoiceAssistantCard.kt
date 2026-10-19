@@ -137,8 +137,11 @@ internal fun VoiceAssistantCard(
     }
 
     LaunchedEffect(privacyRevision, aiContext.selectedGamePackage) {
+        // A StateFlow emission can be observed one composition behind the
+        // atomic epoch when a new OCR draft is prepared at the same time.
+        // Use the authoritative epoch for both revocation and send-time gates.
         if (!UltraVisualDraftPolicy.canSend(
-                visualDraftOrigin, privacyRevision, aiContext.selectedGamePackage
+                visualDraftOrigin, UltraPrivacyEpoch.current(), aiContext.selectedGamePackage
             )
         ) {
             chatMessage = ""
