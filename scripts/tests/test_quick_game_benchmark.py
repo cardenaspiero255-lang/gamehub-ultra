@@ -73,6 +73,25 @@ class ParseTests(unittest.TestCase):
         with self.assertRaises(q.AmbiguousLayerError):
             q.parse_surface_timestats(uid_bucket(10001)+uid_bucket(10002),game)
 
+    def test_aosp_refresh_headers_before_layername_preserve_uid_and_merge_rates(self):
+        name = 'SurfaceView[com.real.game/.Main]#42'
+        a = 'displayRefreshRate = 120 fps\nrenderRate = 60 fps\nuid = 10001\n'
+        b = 'displayRefreshRate = 60 fps\nrenderRate = 30 fps\nuid = 10001\n'
+        data = a + layer(name, 'com.real.game', 60, 60, '16ms=59') + b + layer(name, 'com.real.game', 30, 60, '33ms=59')
+        result = q.parse_surface_timestats(data, 'com.real.game')
+        self.assertIsNotNone(result)
+        self.assertEqual(result['frame_count'], 120)
+        self.assertEqual(result['rate_bucket_count'], 2)
+        self.assertEqual(result['fps_presented'], 40.0)
+
+    def test_aosp_same_layer_different_real_uids_are_distinct(self):
+        name = 'SurfaceView[com.real.game/.Main]#42'
+        a = 'displayRefreshRate = 120 fps\nrenderRate = 60 fps\nuid = 10001\n'
+        b = 'displayRefreshRate = 120 fps\nrenderRate = 60 fps\nuid = 10002\n'
+        data = a + layer(name, 'com.real.game', 60, 60, '16ms=59') + b + layer(name, 'com.real.game', 60, 60, '16ms=59')
+        with self.assertRaises(q.AmbiguousLayerError):
+            q.parse_surface_timestats(data, 'com.real.game')
+
     def test_does_not_match_substring_package(self):
         data = layer('SurfaceView[com.real.game.beta/.Main]', 'com.real.game.beta')
         self.assertIsNone(q.parse_surface_timestats(data, 'com.real.game'))
