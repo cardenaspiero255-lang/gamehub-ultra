@@ -46,10 +46,10 @@ internal object UltraVisualOcr {
             "A system-selected image is required"
         }
         val resolver = context.contentResolver
-        val declaredType = resolver.getType(uri)
-        require(declaredType == null || declaredType.startsWith("image/")) {
-            "The selected content must be an image"
-        }
+        // Do not invoke ContentResolver.getType(uri): some remote providers
+        // block synchronously and do not accept an Android CancellationSignal.
+        // The bounded file read, binary signature and bitmap decoder below
+        // validate the actual image payload instead of provider metadata.
         // Photo-picker providers may expose an unknown AssetFileDescriptor length.
         // Read exactly once under a strict limit before decoding the image.
         val descriptor = resolver.openAssetFileDescriptor(uri, "r", signal)
