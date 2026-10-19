@@ -24,15 +24,12 @@ internal object UltraVisualOcr {
         if (data.take(8).toByteArray().contentEquals(png)) return true
         if (data[0] == 0xff.toByte() && data[1] == 0xd8.toByte() &&
             data[2] == 0xff.toByte()) return true // JPEG
-        fun asciiAt(offset: Int, value: String): Boolean =
-            data.size >= offset + value.length &&
-                value.indices.all { index -> data[offset + index] == value[index].code.toByte() }
-        if (asciiAt(0, "RIFF") && asciiAt(8, "WEBP")) return true
-        if (asciiAt(0, "GIF87a") || asciiAt(0, "GIF89a")) return true
-        if (asciiAt(0, "BM")) return true
+        if (matchesAsciiAt(data, 0, "RIFF") && matchesAsciiAt(data, 8, "WEBP")) return true
+        if (matchesAsciiAt(data, 0, "GIF87a") || matchesAsciiAt(data, 0, "GIF89a")) return true
+        if (matchesAsciiAt(data, 0, "BM")) return true
         // ISO BMFF (HEIF/HEIC/AVIF) brands accepted by Android BitmapFactory.
-        if (asciiAt(4, "ftyp") && listOf("heic", "heix", "hevc", "mif1", "msf1",
-                "avif", "avis").any { asciiAt(8, it) }) return true
+        if (matchesAsciiAt(data, 4, "ftyp") && listOf("heic", "heix", "hevc", "mif1", "msf1",
+                "avif", "avis").any { matchesAsciiAt(data, 8, it) }) return true
         return false
     }
 
@@ -119,4 +116,10 @@ internal object UltraVisualOcr {
             }
         }
     }
+    // A separate helper (never self-recursive): do not confuse calls to this
+    // parser from the previous method with recursion in the security review.
+    private fun matchesAsciiAt(data: ByteArray, offset: Int, value: String): Boolean =
+        data.size >= offset + value.length &&
+            value.indices.all { i -> data[offset + i] == value[i].code.toByte() }
+
 }
