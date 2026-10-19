@@ -16,13 +16,33 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 internal object UltraVisualOcr {
     private const val MAX_SIDE = 4096
 
+    // Validate well-known signatures before bitmap decoding. Keep this gate
+    // separate from the reported provider MIME (which is not trustworthy).
+    private fun isSupportedBitmapHeader(data: ByteArray): Boolean {
+        if (data.size < 16) return false
+        val png = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
+        if (data.take(8).toByteArray().contentEquals(png)) return true
+        if (data[0] == 0xff.toByte() && data[1] == 0xd8.toByte() &&
+            data[2] == 0xff.toByte()) return true // JPEG
+        fun asciiAt(offset: Int, value: String): Boolean =
+            data.size >= offset + value.length &&
+                value.indices.all { index -> data[offset + index] == value[index].code.toByte() }
+        if (asciiAt(0, "RIFF") && asciiAt(8, "WEBP")) return true
+        if (asciiAt(0, "GIF87a") || asciiAt(0, "GIF89a")) return true
+        if (asciiAt(0, "BM")) return true
+        // ISO BMFF (HEIF/HEIC/AVIF) brands accepted by Android BitmapFactory.
+        if (asciiAt(4, "ftyp") && listOf("heic", "heix", "hevc", "mif1", "msf1",
+                "avif", "avis").any { asciiAt(8, it) }) return true
+        return false
+    }
+
     suspend fun readApprovedImage(
         context: Context,
         uri: Uri,
         control: UltraVisualReadControl,
         signal: CancellationSignal,
         // Local inference seam for hermetic Robolectric tests; production omits it.
-        recognizeOverride: (suspend (InputImage) -> String)? = null
+        recognizeOverride: (suspend (android.graphics.Bitmap) -> String)? = null
     ): String {
         control.ensureActive()
         require(uri.scheme == "content" && !uri.authority.isNullOrBlank()) {
@@ -47,6 +67,10 @@ internal object UltraVisualOcr {
             }
         }
         control.ensureActive()
+        // A truncated or spoofed provider stream must not reach native decoding or ML Kit.
+        // Android Photo Picker accepts these platform bitmap formats; MIME alone is
+        // insufficient because content providers can return arbitrary bytes.
+        require(isSupportedBitmapHeader(imageBytes)) { "Selected image format is invalid" }
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, bounds)
         require(bounds.outWidth in 1..MAX_SIDE && bounds.outHeight in 1..MAX_SIDE) {
@@ -55,12 +79,14 @@ internal object UltraVisualOcr {
         val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
             ?: throw IllegalArgumentException("The selected data is not a valid image")
         control.ensureActive()
-        val image = InputImage.fromBitmap(bitmap, 0)
         if (recognizeOverride != null) {
-            val text = recognizeOverride(image)
+            // Hermetic tests exercise the real ContentResolver and BitmapFactory
+            // without bootstrapping Google's ML Kit singleton in Robolectric.
+            val text = recognizeOverride(bitmap)
             control.ensureActive()
             return text.take(1000)
         }
+        val image = InputImage.fromBitmap(bitmap, 0)
         return suspendCancellableCoroutine { continuation ->
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             val closed = AtomicBoolean(false)
