@@ -24,7 +24,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+// Run this regression against Android 14, the target device API level.
+@Config(sdk = [34])
 class UltraPhase5MemoryPrivacyUiRobolectricTest {
     @get:Rule val rule = createComposeRule()
 
