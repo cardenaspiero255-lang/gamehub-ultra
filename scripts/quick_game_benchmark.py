@@ -88,46 +88,102 @@ def _parse_histogram(section: str, frames: int) -> dict[str, float | None]:
     }
 
 
+def _raw_present_histogram(section: str) -> dict[int, int] | None:
+    match = re.search(
+        r"^present(?:2|to)present histogram is as below:\s*\n([^\n]+)",
+        section, re.IGNORECASE | re.MULTILINE,
+    )
+    if match is None:
+        return None
+    buckets: dict[int, int] = {}
+    for ms, count in re.findall(r"(\d+)ms=(\d+)", match.group(1)):
+        millis, amount = int(ms), int(count)
+        if millis > 0 and amount > 0:
+            buckets[millis] = buckets.get(millis, 0) + amount
+    return buckets or None
+
+
 def parse_surface_timestats(text: str, package: str, layer_name: str | None = None) -> dict[str, Any] | None:
-    """Read only game-layer measurements; never use global device FPS statistics."""
+    """Aggregate frame-rate buckets of ONE game surface, rejecting unrelated layers.
+
+    AOSP TimeStats may emit the same layerName/uid in several render-rate and
+    display-refresh buckets. Those buckets must be merged before checking the
+    minimum frame count or determining if there are multiple *distinct* layers.
+    """
     validate_package(package)
-    matches = []
+    grouped: dict[tuple[str, str | None], list[tuple[int, float | None, str]]] = {}
     for section in re.split(r"(?=^layerName\s*=)", text, flags=re.MULTILINE):
         name = _field(section, "layerName")
         if not name:
             continue
         declared_package = _field(section, "packageName")
-        # Some versions omit packageName; then require a whole package token.
         exact_name_match = re.search(rf"(?<![A-Za-z0-9_.]){re.escape(package)}(?![A-Za-z0-9_.])", name)
         if declared_package != package and not (declared_package is None and exact_name_match):
             continue
         if layer_name is not None and name != layer_name:
             continue
+        raw_frames = _field(section, "totalFrames")
+        try:
+            frames = int(raw_frames) if raw_frames is not None else 0
+        except ValueError:
+            frames = -1
+        # Zero frames contain no sample. Invalid totals invalidate a candidate.
+        if frames == 0:
+            continue
         try:
             fps = float(_field(section, "averageFPS") or "nan")
-            frames = int(_field(section, "totalFrames") or "0")
         except ValueError:
-            continue
-        if not math.isfinite(fps) or not 1 <= fps <= 360 or frames < 30:
-            continue
-        matches.append((name, fps, frames, section))
-    if not matches:
+            fps = float("nan")
+        valid_fps = fps if math.isfinite(fps) and 1 <= fps <= 360 else None
+        grouped.setdefault((name, _field(section, "uid")), []).append((frames, valid_fps, section))
+
+    if not grouped:
         return None
-    preferred = [v for v in matches if "SurfaceView" in v[0]]
-    if layer_name is None and preferred:
-        matches = preferred
-    if len(matches) > 1:
+    if layer_name is None:
+        preferred = {k: v for k, v in grouped.items() if "SurfaceView" in k[0]}
+        if preferred:
+            grouped = preferred
+    if len(grouped) > 1:
+        names = [k[0] + (f" (uid {k[1]})" if k[1] else "") for k in grouped]
         raise AmbiguousLayerError(
-            "Varias superficies del juego encontradas: " + "; ".join(v[0] for v in matches) +
+            "Varias superficies del juego encontradas: " + "; ".join(names) +
             ". Selecciona la exacta con --layer."
         )
-    name, fps, frames, body = matches[0]
+
+    (name, _uid), entries = next(iter(grouped.items()))
+    if any(frames < 0 or fps is None for frames, fps, _ in entries):
+        return None  # Partial refresh-rate buckets cannot produce trustworthy FPS.
+    frame_count = sum(frames for frames, _, _ in entries)
+    if frame_count < 30:
+        return None
+    # FPS is the reciprocal of the frame-weighted average presentation interval.
+    # An arithmetic mean of bucket FPS overstates adaptive refresh sessions.
+    weighted_seconds = sum(frames / fps for frames, fps, _ in entries if fps is not None)
+    if weighted_seconds <= 0:
+        return None
+    fps = round(frame_count / weighted_seconds, 2)
+
+    merged: dict[int, int] = {}
+    complete_histogram = True
+    for frames, _, section in entries:
+        part = _raw_present_histogram(section)
+        if part is None or sum(part.values()) > frames:
+            complete_histogram = False
+            break
+        for milliseconds, count in part.items():
+            merged[milliseconds] = merged.get(milliseconds, 0) + count
+
+    hist_section = ""
+    if complete_histogram:
+        hist_section = ("present2present histogram is as below:\n" +
+                        " ".join(f"{ms}ms={count}" for ms, count in merged.items()) + "\n")
     return {
         "measurement_source": "SurfaceFlinger timestats / game-owned presented layer",
         "layer": name,
-        "fps_presented": round(fps, 2),
-        "frame_count": frames,
-        **_parse_histogram(body, frames),
+        "fps_presented": fps,
+        "frame_count": frame_count,
+        "rate_bucket_count": len(entries),
+        **_parse_histogram(hist_section, frame_count),
     }
 
 
