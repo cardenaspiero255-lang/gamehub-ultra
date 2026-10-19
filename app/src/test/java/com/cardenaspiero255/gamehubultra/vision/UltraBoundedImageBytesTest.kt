@@ -29,6 +29,18 @@ class UltraBoundedImageBytesTest {
         }
     }
 
+    @Test fun revokeBetweenChunksStopsConsumptionBeforePublishingBytes() {
+        var checkpoints = 0
+        val stream = ByteArrayInputStream(ByteArray(20))
+        assertFailsWith<java.util.concurrent.CancellationException> {
+            UltraBoundedImageBytes.read(stream, limit = 128, activeCheck = {
+                checkpoints++
+                if (checkpoints == 2) throw java.util.concurrent.CancellationException("revoked")
+            })
+        }
+        kotlin.test.assertEquals(2, checkpoints)
+    }
+
     @Test fun oneByteChunksCannotBypassTheLimit() {
         val slow = object : InputStream() {
             private var emitted = 0
