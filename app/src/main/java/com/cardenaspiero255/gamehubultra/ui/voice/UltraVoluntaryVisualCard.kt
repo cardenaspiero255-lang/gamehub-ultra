@@ -86,7 +86,7 @@ internal fun UltraVoluntaryVisualCard(
         resultGame = null
     }
 
-    fun onPickerResult(uri: Uri?) {
+    val handlePickerResult: (Uri?) -> Unit = { uri ->
         // The Android picker does not include a launch nonce in its callback.
         // The launch gate forbids any overlapping picker, so an old result
         // cannot be reinterpreted as a fresh user authorization.
@@ -105,7 +105,7 @@ internal fun UltraVoluntaryVisualCard(
 
     val picker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? -> onPickerResult(uri) }
+    ) { uri: Uri? -> handlePickerResult(uri) }
 
     LaunchedEffect(gamePackage) {
         revoke()
@@ -152,7 +152,7 @@ internal fun UltraVoluntaryVisualCard(
                     pickerOpen = true
                     notice = ""
                     if (pickerOverride != null) {
-                        pickerOverride { selectedUri -> onPickerResult(selectedUri) }
+                        pickerOverride { selectedUri -> handlePickerResult(selectedUri) }
                     } else {
                         picker.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
