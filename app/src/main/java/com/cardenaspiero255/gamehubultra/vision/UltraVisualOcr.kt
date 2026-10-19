@@ -20,7 +20,9 @@ internal object UltraVisualOcr {
         context: Context,
         uri: Uri,
         control: UltraVisualReadControl,
-        signal: CancellationSignal
+        signal: CancellationSignal,
+        // Local inference seam for hermetic Robolectric tests; production omits it.
+        recognizeOverride: (suspend (InputImage) -> String)? = null
     ): String {
         control.ensureActive()
         require(uri.scheme == "content" && !uri.authority.isNullOrBlank()) {
@@ -54,6 +56,11 @@ internal object UltraVisualOcr {
             ?: throw IllegalArgumentException("The selected data is not a valid image")
         control.ensureActive()
         val image = InputImage.fromBitmap(bitmap, 0)
+        if (recognizeOverride != null) {
+            val text = recognizeOverride(image)
+            control.ensureActive()
+            return text.take(1000)
+        }
         return suspendCancellableCoroutine { continuation ->
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             val closed = AtomicBoolean(false)
