@@ -40,27 +40,29 @@ internal object UltraVisualOcr {
         return suspendCancellableCoroutine { continuation ->
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             val closed = AtomicBoolean(false)
-            fun closeOnce() {
+            // A non-recursive, idempotent release callback; cancellation
+            // and task completion may race, but ML Kit closes exactly once.
+            val releaseRecognizer: () -> Unit = {
                 if (closed.compareAndSet(false, true)) recognizer.close()
             }
-            continuation.invokeOnCancellation { closeOnce() }
+            continuation.invokeOnCancellation { releaseRecognizer() }
             try {
                 recognizer.process(image)
                     .addOnSuccessListener { result ->
                         if (continuation.isActive) continuation.resume(result.text.take(1000))
-                        closeOnce()
+                        releaseRecognizer()
                     }
                     .addOnFailureListener { error ->
                         if (continuation.isActive) continuation.resumeWithException(error)
-                        closeOnce()
+                        releaseRecognizer()
                     }
                     .addOnCanceledListener {
                         if (continuation.isActive) continuation.cancel()
-                        closeOnce()
+                        releaseRecognizer()
                     }
             } catch (error: Exception) {
                 if (continuation.isActive) continuation.resumeWithException(error)
-                closeOnce()
+                releaseRecognizer()
             }
         }
     }
