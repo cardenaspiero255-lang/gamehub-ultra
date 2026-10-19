@@ -31,6 +31,48 @@ class ParseTests(unittest.TestCase):
         self.assertAlmostEqual(result['p95_present_interval_ms'], 17)
         self.assertLess(result['p99_present_fps_estimate'], 59)
 
+    def test_same_surface_split_into_refresh_buckets_merges_all_frames(self):
+        name = 'SurfaceView[com.real.game/.Main]#42'
+        data = (layer(name, 'com.real.game', 60, 18, '16ms=18')
+                + layer(name, 'com.real.game', 30, 22, '33ms=22'))
+        result = q.parse_surface_timestats(data, 'com.real.game')
+        self.assertIsNotNone(result)
+        self.assertEqual(result['frame_count'], 40)
+        self.assertEqual(result['rate_bucket_count'], 2)
+        self.assertAlmostEqual(result['fps_presented'], 38.71, places=2)
+        self.assertEqual(result['p50_present_interval_ms'], 33)
+        self.assertEqual(result['p95_present_interval_ms'], 33)
+        self.assertAlmostEqual(result['slow_30fps_percent'], 0.0)
+        self.assertEqual(q.parse_surface_timestats(data, 'com.real.game', layer_name=name), result)
+
+    def test_multiple_real_surfaces_remain_ambiguous_with_rate_buckets(self):
+        game = 'com.real.game'
+        data = (layer('SurfaceView[com.real.game/Main]#1', game, 60, 20, '16ms=20')
+                + layer('SurfaceView[com.real.game/Main]#1', game, 30, 20, '33ms=20')
+                + layer('SurfaceView[com.real.game/Menu]#2', game, 90, 40, '11ms=40'))
+        with self.assertRaises(q.AmbiguousLayerError):
+            q.parse_surface_timestats(data, game)
+
+    def test_incomplete_or_invalid_rate_bucket_does_not_exaggerate_fps(self):
+        good = layer('SurfaceView[com.real.game/Main]#1', 'com.real.game', 60, 100, '16ms=100')
+        unmeasured = layer('SurfaceView[com.real.game/Main]#1', 'com.real.game', 0, 100, '16ms=100')
+        self.assertIsNone(q.parse_surface_timestats(good + unmeasured, 'com.real.game'))
+        # If one bucket has no interval histogram, pacing must remain explicitly unknown.
+        no_hist = layer('SurfaceView[com.real.game/Main]#1', 'com.real.game', 30, 100, '')
+        result = q.parse_surface_timestats(good + no_hist, 'com.real.game')
+        self.assertEqual(result['frame_count'], 200)
+        self.assertAlmostEqual(result['fps_presented'], 40.0)
+        self.assertIsNone(result['p95_present_interval_ms'])
+        self.assertIsNone(result['slow_30fps_percent'])
+
+    def test_bucket_merging_does_not_mix_different_process_uids(self):
+        game = 'com.real.game'
+        name = 'SurfaceView[com.real.game/Main]#1'
+        def uid_bucket(uid):
+            return layer(name,game,60,70,'16ms=69').replace('totalFrames', f'uid = {uid}\ntotalFrames')
+        with self.assertRaises(q.AmbiguousLayerError):
+            q.parse_surface_timestats(uid_bucket(10001)+uid_bucket(10002),game)
+
     def test_does_not_match_substring_package(self):
         data = layer('SurfaceView[com.real.game.beta/.Main]', 'com.real.game.beta')
         self.assertIsNone(q.parse_surface_timestats(data, 'com.real.game'))
