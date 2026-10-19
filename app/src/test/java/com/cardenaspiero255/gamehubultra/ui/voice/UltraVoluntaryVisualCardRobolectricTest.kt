@@ -33,8 +33,8 @@ class UltraVoluntaryVisualCardRobolectricTest {
     private val pickedUri = Uri.parse("content://media/picker/image.png")
 
     private fun mount(
-        read: suspend () -> String = { "CODIGO CONFIDENCIAL" },
-        onRecognized: ((String, com.cardenaspiero255.gamehubultra.vision.UltraVisualDraftPolicy.Origin) -> Unit)? = null
+        onRecognized: ((String, com.cardenaspiero255.gamehubultra.vision.UltraVisualDraftPolicy.Origin) -> Unit)? = null,
+        read: suspend () -> String = { "CODIGO CONFIDENCIAL" }
     ) {
         selected = null
         shared = mutableListOf()
