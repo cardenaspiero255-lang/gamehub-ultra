@@ -115,6 +115,7 @@ internal fun VoiceAssistantCard(
     var memoryPrivacyNotice by remember { mutableStateOf<String?>(null) }
     val privateMemoryStore = ultraRuntime.memoryPrivacy
     var memoryConsent by remember { mutableStateOf(false) }
+    var visualResetKey by remember { mutableIntStateOf(0) }
     var memoryRetentionDays by remember { mutableIntStateOf(30) }
     var chatMessage by remember { mutableStateOf("") }
     var activeVoiceTurn by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
@@ -543,6 +544,7 @@ applyNetworkProfile = networkGaming::applyProfile
 
     fun invalidatePrivateTurns() {
         UltraPrivacyEpoch.invalidate()
+        visualResetKey++
         queryRunner.cancelActive()
         activeVoiceTurn?.cancel()
         voiceController.stopListening()
@@ -885,6 +887,17 @@ applyNetworkProfile = networkGaming::applyProfile
                     }
                 }
             ) { Text("Privacidad y memoria") }
+            key(visualResetKey) {
+                UltraVoluntaryVisualCard(
+                    gamePackage = aiContext.selectedGamePackage,
+                    enabled = assistantInputEnabled,
+                    onUseRecognizedText = { extracted ->
+                        chatMessage = ("Ayúdame a interpretar este texto de una imagen elegida por mí:\n" +
+                            extracted.take(800)).take(1000)
+                        showTextChat = true
+                    }
+                )
+            }
             Text(
                 stringResource(
                     R.string.voice_selected_profile,
