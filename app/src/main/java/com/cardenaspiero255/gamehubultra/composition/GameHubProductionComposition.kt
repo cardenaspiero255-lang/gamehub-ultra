@@ -107,6 +107,9 @@ internal object GameHubProductionComposition {
                 memoryGateway = memoryStore,
                 gameSessionHistory = {
                     SessionCoachSessionStore(appContext).readRecentGameSessions()
+                },
+                gamingSessionTelemetry = {
+                    SessionCoachSessionStore(appContext).readActiveGamingMeasurementWindow()
                 }
             ),
             sessionMemory = UltraConversationSessionMemoryAdapter(memoryStore),
