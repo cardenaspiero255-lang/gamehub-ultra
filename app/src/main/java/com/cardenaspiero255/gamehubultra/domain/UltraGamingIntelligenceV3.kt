@@ -43,6 +43,14 @@ object UltraGamingIntelligenceV3 {
         ) {
             return "No tengo una sesión activa medida para el juego seleccionado."
         }
+        // Explicit named games cannot silently fall back to the currently selected
+        // game's private performance readings.
+        val mentionedPackages = Regex(
+            """\b[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){1,}\b"""
+        ).findAll(clean).map { it.value }.toList()
+        if (mentionedPackages.any { it != selectedGamePackage.lowercase(Locale.ROOT) }) {
+            return "No tengo una sesión activa medida para el juego indicado."
+        }
 
         val valid = window.samples.asSequence()
             .filter { sample ->
