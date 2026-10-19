@@ -152,10 +152,13 @@ internal fun VoiceAssistantCard(
     }
 
     fun sendTypedChatMessage() {
+        // Capture the OCR origin ONCE; a reactive erase must not turn the
+        // same private message into an unrestricted ordinary typed request.
+        val draftOriginAtSend = visualDraftOrigin
         // Observe privacy and game provenance again synchronously at send-time;
         // a Compose recomposition may not yet have processed an external erase.
         if (!UltraVisualDraftPolicy.canSend(
-                visualDraftOrigin,
+                draftOriginAtSend,
                 UltraPrivacyEpoch.current(),
                 latestAiContext.selectedGamePackage
             )
@@ -182,6 +185,9 @@ internal fun VoiceAssistantCard(
 
         val failureAnswer = "No pude completar la consulta. Inténtalo de nuevo."
         val submission = queryRunner.launch(
+            // Runner rechecks this immutable consent epoch during admission and
+            // immediately before external query dispatch.
+            expectedPrivacyEpoch = draftOriginAtSend?.privacyEpoch,
             onAccepted = {
                 chatMessage = ""
                 visualDraftOrigin = null
