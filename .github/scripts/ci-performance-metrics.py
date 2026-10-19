@@ -253,20 +253,29 @@ def _get_json(url: str, token: str) -> dict[str, Any]:
             "User-Agent": "gamehub-ultra-ci-performance-metrics",
         },
     )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        raise GitHubApiError(exc.code, _safe_http_error_detail(exc)) from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        reason = getattr(exc, "reason", None)
-        detail = str(reason or type(exc).__name__)
-        raise RuntimeError(
-            f"GitHub Actions metrics request failed before a response: {detail}"
-        ) from exc
-    if not isinstance(data, dict):
-        raise RuntimeError("Unexpected GitHub API payload")
-    return data
+    # Only transient gateway/timeout errors may retry: bounded at 3 total
+    # HTTP 429 is NOT retried in this short path: GitHub requires honoring
+    # Retry-After / reset, which may exceed the remaining workflow deadline.
+    # attempts. Auth failures or invalid sources always fail immediately.
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code in (408, 425, 500, 502, 503, 504) and attempt < 2:
+                time.sleep(1 << attempt)
+                continue
+            raise GitHubApiError(exc.code, _safe_http_error_detail(exc)) from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            reason = getattr(exc, "reason", None)
+            detail = str(reason or type(exc).__name__)
+            raise RuntimeError(
+                f"GitHub Actions metrics request failed before a response: {detail}"
+            ) from exc
+        if not isinstance(data, dict):
+            raise RuntimeError("Unexpected GitHub API payload")
+        return data
+    raise RuntimeError("Metrics retry budget exhausted without trusted response")
 
 
 def _fetch_jobs(repository: str, run_id: int, token: str) -> list[dict[str, Any]]:

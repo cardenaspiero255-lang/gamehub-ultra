@@ -20,7 +20,7 @@ test('post-CI gate reads real workflow states and revalidates exact PR SHA',()=>
  assert.match(wf,/listPullRequestsAssociatedWithCommit/);
  assert.match(wf,/listWorkflowRunsForRepo/);
  assert.match(wf,/attestCi/);
- assert.match(wf,/pr\.head\.sha !== run\.head_sha/);
+ assert.match(wf,/pr\.head\.sha\s*!==\s*run\.head_sha/);
  assert.match(wf,/apiComplete/);
  assert.match(wf,/CI evidence unavailable/);
 });
@@ -33,16 +33,31 @@ test('post-CI action remains read-only and cannot merge or mutate an issue',()=>
  assert.match(wf,/actions\/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd/);
  assert.match(wf,/actions\/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f/);
 });
-test('post-CI reports never equate a pending/unknown result with approval',()=>{
+test('post-CI never equates WAITING UNKNOWN or STALE with verified approval',()=>{
  const wf=yaml();
- assert.match(wf,/if\s*\(\s*ci\.status\s*!==\s*['"]PASS['"]\s*\)\s*core\.setFailed/);
- assert.match(wf,/No automated merge or approval/);
+ const {postCiDisposition}=require('./ultra_sentinel_post_ci_state.cjs');
+ const base={sourceSha:'a'.repeat(40),linkedCount:1,eligibleCount:1};
+ assert.equal(postCiDisposition({...base,ciStatuses:['WAITING']}).action,'RETRY');
+ assert.equal(postCiDisposition({...base,ciStatuses:['WAITING'],exhausted:true}).action,'BLOCK');
+ assert.equal(postCiDisposition({...base,ciStatuses:['UNKNOWN']}).action,'BLOCK');
+ assert.equal(postCiDisposition({...base,eligibleCount:0,ciStatuses:[]}).action,'ARCHIVE');
+ assert.equal(postCiDisposition({...base,ciStatuses:['PASS']}).action,'VERIFIED');
+ assert.match(wf,/if\(decision\.action==='BLOCK'\)\s*core\.setFailed/);
+ assert.match(wf,/report\.attested=decision\.attested/);
+ assert.match(wf,/Only PASS is verified evidence/);
  assert.match(wf,/if-no-files-found: error/);
 });
 
-test('ROOT: post-CI must not claim a green run when no current PR received attestation',()=>{
- const src=yaml();
- assert.match(src,/if\s*\(!report\.prs\.length\)core\.setFailed\(/);
+test('ROOT: no current PR cannot receive PASS or approval; incomplete API still blocks',()=>{
+ const wf=yaml();
+ const {postCiDisposition}=require('./ultra_sentinel_post_ci_state.cjs');
+ const base={sourceSha:'a'.repeat(40),linkedCount:0,eligibleCount:0,ciStatuses:[]};
+ const stale=postCiDisposition(base);
+ assert.equal(stale.status,'STALE');assert.equal(stale.attested,false);
+ assert.equal(stale.autoMergeAllowed,false);assert.equal(stale.autoApproveAllowed,false);
+ assert.equal(postCiDisposition({...base,apiComplete:false}).action,'BLOCK');
+ assert.match(wf,/core\.notice\('STALE historical PR evidence archived/);
+ assert.match(wf,/report\.status=decision\.status/);
 });
 
 test('post-CI checks the actual default branch and a bounded complete run list',()=>{
