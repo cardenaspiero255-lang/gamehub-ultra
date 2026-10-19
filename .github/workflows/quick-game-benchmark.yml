@@ -1,0 +1,24 @@
+name: Fast Game Benchmark Unit Tests
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/quick_game_benchmark.py'
+      - 'scripts/tests/test_quick_game_benchmark.py'
+      - '.github/workflows/quick-game-benchmark.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  measured-parser-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate no fabricated FPS, thermal, or ping
+        run: python -m unittest discover -s scripts/tests -p 'test_quick_game_benchmark.py' -v
