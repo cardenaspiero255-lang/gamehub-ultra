@@ -9,7 +9,6 @@ import android.net.Uri
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
 import android.content.res.AssetFileDescriptor
-import com.google.mlkit.vision.common.InputImage
 import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -76,7 +75,7 @@ class UltraVisualOcrRobolectricTest {
         val result = UltraVisualOcr.readApprovedImage(
             RuntimeEnvironment.getApplication(), uri, UltraVisualReadControl(),
             CancellationSignal(),
-            recognizeOverride = { image: InputImage ->
+            recognizeOverride = { image: Bitmap ->
                 recognizedInput = image.width == 4 && image.height == 4
                 "RESULTADO SOLO LOCAL"
             }
@@ -105,6 +104,21 @@ class UltraVisualOcrRobolectricTest {
 
     @Test fun invalidImagePixelsCannotReachRecognizer() = runBlocking {
         val uri = register(ImageProvider(byteArrayOf(1, 2, 3)))
+        var invoked = false
+        assertFailsWith<IllegalArgumentException> {
+            UltraVisualOcr.readApprovedImage(
+                RuntimeEnvironment.getApplication(), uri, UltraVisualReadControl(),
+                CancellationSignal(), recognizeOverride = { invoked = true; "NEVER" }
+            )
+        }
+        assertTrue(!invoked)
+    }
+
+    @Test fun spoofedImageMimeWithMalformedHeaderCannotReachDecoderOrMlKit() = runBlocking {
+        // Robolectric BitmapFactory may synthesize bitmap dimensions for bytes
+        // that the real Android decoder rejects. The production header gate
+        // must reject this provider before any ML Kit singleton is accessed.
+        val uri = register(ImageProvider(ByteArray(128) { 0x42 }))
         var invoked = false
         assertFailsWith<IllegalArgumentException> {
             UltraVisualOcr.readApprovedImage(
