@@ -5,6 +5,7 @@ import com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachPriority
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachSignal
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
+import com.cardenaspiero255.gamehubultra.domain.UltraGamingMeasurementWindow
 import com.cardenaspiero255.gamehubultra.domain.UltraRecordedGameSession
 import com.cardenaspiero255.gamehubultra.domain.UltraSessionHistoryIntelligence
 import java.nio.charset.StandardCharsets
@@ -299,6 +300,17 @@ class SessionCoachSessionStore(
 
     fun readActiveSession(): SessionCoachStoredSession? =
         readSession(ACTIVE_PREFIX)
+
+    /** Reuses the existing bounded Session Coach samples; does not start collection. */
+    fun readActiveGamingMeasurementWindow(): UltraGamingMeasurementWindow? =
+        readActiveSession()?.let { session ->
+            UltraGamingMeasurementWindow(
+                packageName = session.packageName,
+                startedAtMillis = session.startedAtMillis,
+                endedAtMillis = session.endedAtMillis,
+                samples = session.samples
+            )
+        }
 
     fun readLastCompletedSession(): SessionCoachStoredSession? =
         readSession(LAST_PREFIX)?.takeIf { it.endedAtMillis != null }
