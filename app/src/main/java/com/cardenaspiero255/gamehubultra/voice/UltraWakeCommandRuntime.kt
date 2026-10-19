@@ -35,6 +35,7 @@ internal class UltraWakeCommandRuntime(
     private val conversationLedger: UltraVoiceConversationLedger
 ) {
     fun execute(transcript: String): String {
+        val privacyEpoch = UltraPrivacyEpoch.current()
         val selectionRepository: GameSelectionStateRepository =
             GameHubProductionComposition.selectionRepository(context.applicationContext)
         val selectedGamePackage = runCatching {
@@ -139,6 +140,7 @@ internal class UltraWakeCommandRuntime(
                         conversation = conversationBefore
                     )
                 }
+                if (!UltraPrivacyEpoch.isCurrent(privacyEpoch)) return ""
                 if (memoryCommand == null) {
                     val delta = conversationLedger.record(route.message, answer)
                     memoryStore.enqueueSyncConversation(

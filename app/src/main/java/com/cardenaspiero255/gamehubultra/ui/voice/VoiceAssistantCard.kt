@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -19,6 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cardenaspiero255.gamehubultra.*
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.*
+import com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import com.cardenaspiero255.gamehubultra.voice.*
@@ -87,8 +89,8 @@ internal fun VoiceAssistantCard(
     val latestOnConversationChanged by rememberUpdatedState(onConversationChanged)
     val latestAssistantInputEnabled by rememberUpdatedState(assistantInputEnabled)
     var listening by remember { mutableStateOf(false) }
-    var transcript by rememberSaveable { mutableStateOf("") }
-    var response by rememberSaveable { mutableStateOf<String?>(null) }
+    var transcript by remember { mutableStateOf("") }
+    var response by remember { mutableStateOf<String?>(null) }
 
     // Android may reject startForeground after startForegroundService succeeded.
     // Observe the service-owned preference rather than treating the initial tap
@@ -107,7 +109,15 @@ internal fun VoiceAssistantCard(
     var pendingOneShotListening by rememberSaveable { mutableStateOf(false) }
     var lastHandledStartRequest by remember { mutableIntStateOf(0) }
     var showTextChat by rememberSaveable { mutableStateOf(false) }
-    var chatMessage by rememberSaveable { mutableStateOf("") }
+    var showMemoryPrivacy by rememberSaveable { mutableStateOf(false) }
+    var showEraseMemoryConfirmation by rememberSaveable { mutableStateOf(false) }
+    var memoryPrivacyBusy by remember { mutableStateOf(false) }
+    var memoryPrivacyNotice by remember { mutableStateOf<String?>(null) }
+    val privateMemoryStore = ultraRuntime.memoryPrivacy
+    var memoryConsent by remember { mutableStateOf(false) }
+    var memoryRetentionDays by remember { mutableIntStateOf(30) }
+    var chatMessage by remember { mutableStateOf("") }
+    var activeVoiceTurn by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val chatSending by queryRunner.isRunning.collectAsStateWithLifecycle()
     var permissionGranted by remember {
         mutableStateOf(
@@ -316,9 +326,11 @@ internal fun VoiceAssistantCard(
                     gamePackage = turnAiContext.selectedGamePackage
                 ) ?: return@transcript
                 val originatingGamePackage = capturedVoiceScope.gamePackage
+                val turnPrivacyEpoch = UltraPrivacyEpoch.current()
                 transcript = spokenText
-                scope.launch(Dispatchers.IO) {
+                activeVoiceTurn = scope.launch(Dispatchers.IO) {
                     if (
+                        !UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch) ||
                         !isUltraVoiceTurnScopeCurrent(
                             captured = capturedVoiceScope,
                             assistantInputReady = latestAssistantInputEnabled,
@@ -337,6 +349,7 @@ internal fun VoiceAssistantCard(
                     )
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
                         if (
+                            UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch) &&
                             UltraConversationScopePolicy.isSameGame(
                                 originatingGamePackage,
                                 latestAiContext.selectedGamePackage
@@ -366,7 +379,7 @@ internal fun VoiceAssistantCard(
                                 answer = route.answer,
                                 networkGaming = networkGaming,
                                 isCurrent = {
-                                    isUltraVoiceTurnScopeCurrent(
+                                    UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch) && isUltraVoiceTurnScopeCurrent(
                                         captured = capturedVoiceScope,
                                         assistantInputReady = latestAssistantInputEnabled,
                                         currentGamePackage = latestAiContext.selectedGamePackage
@@ -379,7 +392,7 @@ internal fun VoiceAssistantCard(
                                 maxEntries = MAX_CHAT_HISTORY
                             )
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                UltraVoiceResultPublisher.publishIfCurrentGame(
+                                if (UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch)) UltraVoiceResultPublisher.publishIfCurrentGame(
                                     originatingGamePackage = originatingGamePackage,
                                     currentGamePackage = latestAiContext.selectedGamePackage
                                 ) {
@@ -421,7 +434,7 @@ internal fun VoiceAssistantCard(
                                     )
                                 }
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                UltraVoiceResultPublisher.publishIfCurrentGame(
+                                if (UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch)) UltraVoiceResultPublisher.publishIfCurrentGame(
                                     originatingGamePackage = originatingGamePackage,
                                     currentGamePackage = latestAiContext.selectedGamePackage
                                 ) {
@@ -464,9 +477,10 @@ applyNetworkProfile = networkGaming::applyProfile
                                 maxEntries = MAX_CHAT_HISTORY
                             )
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                if (result is VoiceActionResult.GameOpened) {
+                                if (UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch) && result is VoiceActionResult.GameOpened) {
                                     onGameSelected(result.game.packageName)
                                 }
+                                if (!UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch)) return@withContext
                                 UltraCommandUiEffectPolicy
                                     .profileForCurrentGameCallback(result)
                                     ?.let(onProfileSelected)
@@ -475,7 +489,7 @@ applyNetworkProfile = networkGaming::applyProfile
                                         result = result,
                                         gamePackage = originatingGamePackage
                                     )
-                                UltraVoiceResultPublisher.publishIfCurrentGame(
+                                if (UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch)) UltraVoiceResultPublisher.publishIfCurrentGame(
                                     originatingGamePackage = originatingGamePackage,
                                     currentGamePackage = latestAiContext.selectedGamePackage
                                 ) {
@@ -525,6 +539,177 @@ applyNetworkProfile = networkGaming::applyProfile
 
     DisposableEffect(voiceController) {
         onDispose { voiceController.release() }
+    }
+
+    fun invalidatePrivateTurns() {
+        UltraPrivacyEpoch.invalidate()
+        queryRunner.cancelActive()
+        activeVoiceTurn?.cancel()
+        voiceController.stopListening()
+        transcript = ""
+        response = null
+        chatMessage = ""
+    }
+
+    // Preserve the settings dialog while an independent confirmation is displayed.
+    // The confirmation overlays the settings; cancelling only closes the top dialog.
+    if (showMemoryPrivacy) {
+        AlertDialog(
+            onDismissRequest = { if (!memoryPrivacyBusy) showMemoryPrivacy = false },
+            title = { Text("Memoria privada de Ultra") },
+            text = {
+                Column(
+                    modifier = Modifier.heightIn(max = 430.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        "Desactivada por defecto. Solo se guardan conversaciones locales cifradas tras tu autorización. " +
+                            "Cada juego conserva su propio contexto.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Guardar recuerdos", modifier = Modifier.weight(1f))
+                        Switch(
+                            modifier = Modifier.testTag("ultra-memory-consent-toggle"),
+                            checked = memoryConsent,
+                            enabled = !memoryPrivacyBusy,
+                            onCheckedChange = { enabled ->
+                                if (!enabled) invalidatePrivateTurns()
+                                memoryPrivacyBusy = true
+                                scope.launch(Dispatchers.Main.immediate) {
+                                    val result = withContext(Dispatchers.IO) {
+                                        runCatching { privateMemoryStore.setMemoryEnabled(enabled) }
+                                    }
+                                    memoryPrivacyBusy = false
+                                    if (result.isSuccess) {
+                                        memoryConsent = enabled
+                                        if (!enabled) latestOnConversationChanged(emptyList())
+                                        memoryPrivacyNotice =
+                                            if (enabled) "Memoria activada con tu consentimiento."
+                                            else "Memoria desactivada; las conversaciones guardadas no se consultarán."
+                                    } else {
+                                        memoryPrivacyNotice = "No fue posible actualizar el consentimiento."
+                                    }
+                                }
+                            }
+                        )
+                    }
+                    Text("Conservar conversaciones durante:", style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        listOf(7, 30, 90).forEach { days ->
+                            FilterChip(
+                                selected = memoryRetentionDays == days,
+                                onClick = {
+                                    memoryPrivacyBusy = true
+                                    scope.launch(Dispatchers.Main.immediate) {
+                                        val updated = withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                privateMemoryStore.setConversationRetentionDays(days)
+                                            }.getOrDefault(false)
+                                        }
+                                        if (updated) {
+                                            memoryRetentionDays = days
+                                            memoryPrivacyNotice = "Retención de conversaciones: $days días."
+                                        } else {
+                                            memoryPrivacyNotice = "No se pudo cambiar la retención."
+                                        }
+                                        memoryPrivacyBusy = false
+                                    }
+                                },
+                                enabled = !memoryPrivacyBusy,
+                                label = { Text("$days días") }
+                            )
+                        }
+                    }
+                    Text(
+                        "Los recuerdos guardados explícitamente no caducan con el historial. " +
+                            "Puedes borrar el historial del juego actual o eliminar toda la memoria.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    TextButton(
+                        enabled = !memoryPrivacyBusy,
+                        onClick = {
+                            invalidatePrivateTurns()
+                            memoryPrivacyBusy = true
+                            val selectedGame = latestAiContext.selectedGamePackage
+                            scope.launch(Dispatchers.Main.immediate) {
+                                val result = withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        privateMemoryStore.clearConversationHistory(
+                                            UltraMemoryScope(userId = "local", gamePackage = selectedGame)
+                                        )
+                                    }
+                                }
+                                memoryPrivacyBusy = false
+                                if (result.isSuccess) {
+                                    latestOnConversationChanged(emptyList())
+                                    memoryPrivacyNotice = "Historial del juego actual borrado."
+                                } else {
+                                    memoryPrivacyNotice = "No pude borrar el historial."
+                                }
+                            }
+                        }
+                    ) { Text("Borrar historial del juego") }
+                    TextButton(
+                        enabled = !memoryPrivacyBusy,
+                        onClick = { showEraseMemoryConfirmation = true }
+                    ) { Text("Borrar toda mi memoria") }
+                    memoryPrivacyNotice?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { showMemoryPrivacy = false },
+                    enabled = !memoryPrivacyBusy
+                ) { Text("Cerrar") }
+            }
+        )
+    }
+
+    if (showMemoryPrivacy && showEraseMemoryConfirmation) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!memoryPrivacyBusy) showEraseMemoryConfirmation = false
+            },
+            title = { Text("Confirmar borrado de memoria") },
+            text = {
+                Text("Se borrarán conversaciones y recuerdos de todos los juegos. ¿Confirmas?")
+            },
+            confirmButton = {
+                Button(
+                    modifier = Modifier.testTag("ultra-erase-confirm"),
+                    enabled = !memoryPrivacyBusy,
+                    onClick = {
+                        invalidatePrivateTurns()
+                        memoryPrivacyBusy = true
+                        scope.launch(Dispatchers.Main.immediate) {
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching { privateMemoryStore.deleteAllPrivateMemory() }
+                            }
+                            memoryPrivacyBusy = false
+                            showEraseMemoryConfirmation = false
+                            if (result.isSuccess) {
+                                memoryConsent = false
+                                latestOnConversationChanged(emptyList())
+                                memoryPrivacyNotice =
+                                    "Memoria cifrada eliminada y consentimiento revocado."
+                            } else {
+                                memoryPrivacyNotice = "No pude borrar toda la memoria."
+                            }
+                        }
+                    }
+                ) { Text("Borrar definitivamente") }
+            },
+            dismissButton = {
+                TextButton(
+                    modifier = Modifier.testTag("ultra-erase-cancel"),
+                    enabled = !memoryPrivacyBusy,
+                    onClick = { showEraseMemoryConfirmation = false }
+                ) { Text("Cancelar") }
+            }
+        )
     }
 
     if (showTextChat) {
@@ -675,6 +860,31 @@ applyNetworkProfile = networkGaming::applyProfile
                     }
                 )
             }
+            TextButton(
+                onClick = {
+                    if (!memoryPrivacyBusy) {
+                        showEraseMemoryConfirmation = false
+                        memoryPrivacyNotice = null
+                        memoryPrivacyBusy = true
+                        scope.launch(Dispatchers.Main.immediate) {
+                            val settings = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    privateMemoryStore.isMemoryEnabled() to
+                                        privateMemoryStore.conversationRetentionDays()
+                                }
+                            }
+                            memoryPrivacyBusy = false
+                            if (settings.isSuccess) {
+                                memoryConsent = settings.getOrThrow().first
+                                memoryRetentionDays = settings.getOrThrow().second
+                                showMemoryPrivacy = true
+                            } else {
+                                response = "No pude cargar los controles de privacidad."
+                            }
+                        }
+                    }
+                }
+            ) { Text("Privacidad y memoria") }
             Text(
                 stringResource(
                     R.string.voice_selected_profile,

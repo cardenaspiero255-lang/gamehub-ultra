@@ -69,7 +69,11 @@ internal class UltraConversationSessionMemoryAdapter(
     }
 
     override fun enqueueClearConversationHistory(scope: UltraMemoryScope) {
-        store.enqueueClearConversationHistory(scope = scope)
+        // A UI-only reset after revoking consent must not erase saved history.
+        // Explicit delete operations use the store's separate clear/delete APIs.
+        if (store.isMemoryEnabled()) {
+            store.enqueueClearConversationHistory(scope = scope)
+        }
     }
 }
 

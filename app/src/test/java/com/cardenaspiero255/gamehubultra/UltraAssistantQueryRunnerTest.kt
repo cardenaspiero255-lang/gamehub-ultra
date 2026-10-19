@@ -226,13 +226,18 @@ class UltraAssistantQueryRunnerTest {
                 publishConversation = { conversation = it }
             )
 
-            val published = runner.appendAssistantIfCurrentGame(
-                originatingGamePackage = "game.a",
-                assistantEntry = "  Ultra: nueva  ",
-                maxEntries = 8,
-                resetConversation = true
+            var published = false
+            val submitted = assertIs<UltraAssistantQuerySubmission.Accepted>(
+                runner.launch(onAccepted = {}, onFailure = {}) {
+                    published = runner.appendAssistantIfCurrentGame(
+                        originatingGamePackage = "game.a",
+                        assistantEntry = "  Ultra: nueva  ",
+                        maxEntries = 8,
+                        resetConversation = true
+                    )
+                }
             )
-
+            submitted.job.join()
             assertTrue(published)
             assertEquals(listOf("Ultra: nueva"), conversation)
         } finally {
@@ -255,12 +260,16 @@ class UltraAssistantQueryRunnerTest {
                 publishConversation = { conversation = it }
             )
 
-            runner.appendAssistantIfCurrentGame(
-                originatingGamePackage = "game.a",
-                assistantEntry = "cuatro",
-                maxEntries = 3
+            val submitted = assertIs<UltraAssistantQuerySubmission.Accepted>(
+                runner.launch(onAccepted = {}, onFailure = {}) {
+                    runner.appendAssistantIfCurrentGame(
+                        originatingGamePackage = "game.a",
+                        assistantEntry = "cuatro",
+                        maxEntries = 3
+                    )
+                }
             )
-
+            submitted.job.join()
             assertEquals(listOf("dos", "tres", "cuatro"), conversation)
         } finally {
             ownerScope.cancel()

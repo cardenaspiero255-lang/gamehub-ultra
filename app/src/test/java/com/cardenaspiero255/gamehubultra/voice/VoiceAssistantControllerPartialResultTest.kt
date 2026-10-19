@@ -25,10 +25,7 @@ class VoiceAssistantControllerPartialResultTest {
             onPartialTranscript = { partials += it }
         )
 
-        val listenerField = VoiceAssistantController::class.java
-            .getDeclaredField("listener")
-            .apply { isAccessible = true }
-        val listener = listenerField.get(controller) as RecognitionListener
+        val listener = controller.recognitionListenerForTest()
 
         listener.onPartialResults(
             Bundle().apply {

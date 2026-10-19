@@ -517,6 +517,7 @@ class UltraWakeService : Service() {
     }
 
     private fun handleCommand(transcript: String) {
+        val privacyEpoch = UltraPrivacyEpoch.current()
         if (!lifecycleGate.canAcceptRecognition()) {
             commandCoordinator.finishCommand()
             return
@@ -530,12 +531,17 @@ class UltraWakeService : Service() {
                         scheduleRestart()
                     }
                 ) {
-                    val response = UltraWakeFailureGuard.run {
-                        commandRuntime.execute(transcript)
-                    }
+                    val response =
+                        if (UltraPrivacyEpoch.isCurrent(privacyEpoch)) {
+                            UltraWakeFailureGuard.run { commandRuntime.execute(transcript) }
+                        } else ""
                     mainHandler.post {
-                        if (stopped || !lifecycleGate.canAcceptRecognition()) {
+                        if (
+                            stopped || !lifecycleGate.canAcceptRecognition() ||
+                            !UltraPrivacyEpoch.isCurrent(privacyEpoch) || response.isBlank()
+                        ) {
                             commandCoordinator.finishCommand()
+                            if (!stopped) scheduleRestart()
                         } else {
                             speakAndResume(response)
                         }

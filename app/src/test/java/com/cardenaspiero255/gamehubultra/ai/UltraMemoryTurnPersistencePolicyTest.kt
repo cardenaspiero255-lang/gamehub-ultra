@@ -31,6 +31,7 @@ class UltraMemoryTurnPersistencePolicyTest {
         assertTrue(UltraMemoryTurnPersistencePolicy.resetsConversationContext("Ultra archiva prefiero X4"))
         assertTrue(UltraMemoryTurnPersistencePolicy.resetsConversationContext("Ultra borra mi historial"))
         assertTrue(UltraMemoryTurnPersistencePolicy.resetsConversationContext("Ultra olvida todo"))
+        assertTrue(UltraMemoryTurnPersistencePolicy.resetsConversationContext("Ultra desactiva la memoria"))
         assertFalse(UltraMemoryTurnPersistencePolicy.resetsConversationContext("Ultra recuerda que prefiero X4"))
         assertFalse(UltraMemoryTurnPersistencePolicy.resetsConversationContext("hola Ultra"))
     }

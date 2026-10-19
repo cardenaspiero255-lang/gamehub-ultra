@@ -1,12 +1,14 @@
 package com.cardenaspiero255.gamehubultra
 
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
+import com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +35,13 @@ internal class UltraAssistantQueryRunner(
 ) {
     private val _isRunning = MutableStateFlow(false)
     val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
+    private var activeJob: Job? = null
+    private var activePrivacyEpoch: Long? = null
+
+    /** Cancel an in-flight turn before a privacy erasure; later completions stay suppressed. */
+    fun cancelActive() {
+        synchronized(this) { activeJob?.cancel(CancellationException("Private context erased")) }
+    }
 
     fun launch(
         onAccepted: () -> Unit,
@@ -40,11 +49,13 @@ internal class UltraAssistantQueryRunner(
         block: suspend CoroutineScope.() -> Unit
     ): UltraAssistantQuerySubmission {
         val originatingGamePackage = currentGamePackage()
+        val requestPrivacyEpoch = UltraPrivacyEpoch.current()
         val accepted = synchronized(this) {
-            if (_isRunning.value || !ownerScope.isActive) {
+            if (_isRunning.value || !ownerScope.isActive || !UltraPrivacyEpoch.isCurrent(requestPrivacyEpoch)) {
                 false
             } else {
                 _isRunning.value = true
+                activePrivacyEpoch = requestPrivacyEpoch
                 true
             }
         }
@@ -53,7 +64,8 @@ internal class UltraAssistantQueryRunner(
         val job = ownerScope.launch(executionDispatcher) {
             try {
                 withContext(publicationDispatcher) {
-                    if (currentGamePackage() != originatingGamePackage) {
+                    if (currentGamePackage() != originatingGamePackage ||
+                        !UltraPrivacyEpoch.isCurrent(requestPrivacyEpoch)) {
                         throw CancellationException("Selected game changed before query acceptance")
                     }
                     onAccepted()
@@ -62,12 +74,19 @@ internal class UltraAssistantQueryRunner(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                onFailure(error)
+                if (UltraPrivacyEpoch.isCurrent(requestPrivacyEpoch)) onFailure(error)
             }
         }
         // Completion also runs for jobs cancelled before their body starts.
+        synchronized(this) { activeJob = job }
         job.invokeOnCompletion {
-            _isRunning.value = false
+            synchronized(this) {
+                if (activeJob === job) {
+                    activeJob = null
+                    activePrivacyEpoch = null
+                    _isRunning.value = false
+                }
+            }
         }
         return UltraAssistantQuerySubmission.Accepted(job)
     }
@@ -79,7 +98,10 @@ internal class UltraAssistantQueryRunner(
         resetConversation: Boolean = false
     ): Boolean =
         withContext(publicationDispatcher) {
-            if (currentGamePackage() != originatingGamePackage) {
+            val requestEpoch = synchronized(this@UltraAssistantQueryRunner) { activePrivacyEpoch }
+            if (currentGamePackage() != originatingGamePackage ||
+                requestEpoch == null || !UltraPrivacyEpoch.isCurrent(requestEpoch) ||
+                !currentCoroutineContext().isActive) {
                 return@withContext false
             }
 
