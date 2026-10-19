@@ -10,6 +10,13 @@ internal class UltraVoluntaryVisualSession(
     private val currentPrivacyEpoch: () -> Long = UltraPrivacyEpoch::current,
     private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000L }
 ) {
+    /** Immutable scope of one explicitly approved picker result. */
+    data class ApprovedSelection(
+        val uri: String,
+        val privacyEpoch: Long,
+        val gamePackage: String?
+    )
+
     private data class Selection(
         val id: Long,
         val game: String?,
@@ -54,7 +61,7 @@ internal class UltraVoluntaryVisualSession(
     }
 
     @Synchronized
-    fun consumeAfterUserConfirmation(ticket: Long, gamePackage: String?): String? {
+    fun consumeAfterUserConfirmation(ticket: Long, gamePackage: String?): ApprovedSelection? {
         val item = selection ?: return null
         // The previous chooser can finish after a new chooser starts.
         // Ignore this obsolete ticket, preserving the newer authorization.
@@ -62,11 +69,16 @@ internal class UltraVoluntaryVisualSession(
         if (ticket < item.id) return null
         selection = null
         val now = monotonicMillis()
-        return item.uri.takeIf {
+        val uri = item.uri.takeIf {
             item.id == ticket &&
                 valid(item, gamePackage, now, 180_000L) &&
                 elapsed(item.selected, now, 120_000L)
-        }
+        } ?: return null
+        return ApprovedSelection(
+            uri = uri,
+            privacyEpoch = item.privacyEpoch,
+            gamePackage = item.game
+        )
     }
 
     @Synchronized
