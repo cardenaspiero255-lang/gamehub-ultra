@@ -576,7 +576,7 @@ applyNetworkProfile = networkGaming::applyProfile
                             onCheckedChange = { enabled ->
                                 if (!enabled) invalidatePrivateTurns()
                                 memoryPrivacyBusy = true
-                                scope.launch {
+                                scope.launch(Dispatchers.Main.immediate) {
                                     val result = withContext(Dispatchers.IO) {
                                         runCatching { privateMemoryStore.setMemoryEnabled(enabled) }
                                     }
@@ -601,7 +601,7 @@ applyNetworkProfile = networkGaming::applyProfile
                                 selected = memoryRetentionDays == days,
                                 onClick = {
                                     memoryPrivacyBusy = true
-                                    scope.launch {
+                                    scope.launch(Dispatchers.Main.immediate) {
                                         val updated = withContext(Dispatchers.IO) {
                                             runCatching {
                                                 privateMemoryStore.setConversationRetentionDays(days)
@@ -632,7 +632,7 @@ applyNetworkProfile = networkGaming::applyProfile
                             invalidatePrivateTurns()
                             memoryPrivacyBusy = true
                             val selectedGame = latestAiContext.selectedGamePackage
-                            scope.launch {
+                            scope.launch(Dispatchers.Main.immediate) {
                                 val result = withContext(Dispatchers.IO) {
                                     runCatching {
                                         privateMemoryStore.clearConversationHistory(
@@ -684,7 +684,7 @@ applyNetworkProfile = networkGaming::applyProfile
                     onClick = {
                         invalidatePrivateTurns()
                         memoryPrivacyBusy = true
-                        scope.launch {
+                        scope.launch(Dispatchers.Main.immediate) {
                             val result = withContext(Dispatchers.IO) {
                                 runCatching { privateMemoryStore.deleteAllPrivateMemory() }
                             }
@@ -866,7 +866,7 @@ applyNetworkProfile = networkGaming::applyProfile
                         showEraseMemoryConfirmation = false
                         memoryPrivacyNotice = null
                         memoryPrivacyBusy = true
-                        scope.launch {
+                        scope.launch(Dispatchers.Main.immediate) {
                             val settings = withContext(Dispatchers.IO) {
                                 runCatching {
                                     privateMemoryStore.isMemoryEnabled() to
