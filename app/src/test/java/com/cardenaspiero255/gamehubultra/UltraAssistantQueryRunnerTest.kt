@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra
 
+import com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -16,6 +17,60 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class UltraAssistantQueryRunnerTest {
+    @Test
+    fun staleOCRDraftIsRejectedAtRunnerAdmissionAfterExternalErase() = runBlocking {
+        val originalEpoch = UltraPrivacyEpoch.current()
+        UltraPrivacyEpoch.invalidate()
+        val owner = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            var acceptedTurns = 0
+            var executed = false
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = owner,
+                executionDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined,
+                currentGamePackage = { "game.a" },
+                currentConversation = { emptyList() },
+                publishConversation = {}
+            )
+            val response = runner.launch(
+                onAccepted = { acceptedTurns++ },
+                onFailure = { error("Invalid OCR must not schedule a fallback") },
+                expectedPrivacyEpoch = originalEpoch
+            ) { executed = true }
+            assertIs<UltraAssistantQuerySubmission.Rejected>(response)
+            assertEquals(0, acceptedTurns)
+            assertFalse(executed)
+            assertFalse(runner.isRunning.value)
+        } finally { owner.cancel() }
+    }
+
+    @Test
+    fun erasureInAcceptanceCallbackCannotDispatchPreviouslyApprovedOCRQuery() = runBlocking {
+        val approvedEpoch = UltraPrivacyEpoch.current()
+        val owner = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            var executed = false
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = owner,
+                executionDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined,
+                currentGamePackage = { "game.a" },
+                currentConversation = { emptyList() },
+                publishConversation = {}
+            )
+            val response = runner.launch(
+                expectedPrivacyEpoch = approvedEpoch,
+                onAccepted = { UltraPrivacyEpoch.invalidate() },
+                onFailure = { error("Cancelled OCR must not report a provider failure") }
+            ) { executed = true }
+            val submitted = assertIs<UltraAssistantQuerySubmission.Accepted>(response)
+            submitted.job.join()
+            assertFalse(executed)
+            assertFalse(runner.isRunning.value)
+        } finally { owner.cancel() }
+    }
+
     @Test
     fun submittedQuerySurvivesVoiceCardScopeCancellation() = runBlocking {
         val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
