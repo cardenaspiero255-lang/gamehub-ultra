@@ -551,9 +551,9 @@ applyNetworkProfile = networkGaming::applyProfile
         chatMessage = ""
     }
 
-    // Keep the settings and irreversible deletion confirmation in distinct dialogs.
-    // A single dialog never swaps its action-bar slot hierarchy while displayed.
-    if (showMemoryPrivacy && !showEraseMemoryConfirmation) {
+    // Preserve the settings dialog while an independent confirmation is displayed.
+    // The confirmation overlays the settings; cancelling only closes the top dialog.
+    if (showMemoryPrivacy) {
         AlertDialog(
             onDismissRequest = { if (!memoryPrivacyBusy) showMemoryPrivacy = false },
             title = { Text("Memoria privada de Ultra") },
