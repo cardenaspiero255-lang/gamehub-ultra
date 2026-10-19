@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.cardenaspiero255.gamehubultra.vision.UltraVisualDraftPolicy
 import com.cardenaspiero255.gamehubultra.vision.UltraVisualOcr
 import com.cardenaspiero255.gamehubultra.vision.UltraVoluntaryVisualSession
 import com.cardenaspiero255.gamehubultra.vision.UltraVisualPickerLaunch
@@ -45,7 +46,7 @@ import kotlinx.coroutines.withContext
 internal fun UltraVoluntaryVisualCard(
     gamePackage: String?,
     enabled: Boolean,
-    onUseRecognizedText: (String) -> Unit,
+    onUseRecognizedText: (String, UltraVisualDraftPolicy.Origin) -> Unit,
     // Overrides are internal hooks for Robolectric security/coverage regressions.
     pickerOverride: (((Uri?) -> Unit) -> Unit)? = null,
     ocrOverride: (suspend (Context, Uri, UltraVisualReadControl, CancellationSignal) -> String)? = null
@@ -196,7 +197,13 @@ internal fun UltraVoluntaryVisualCard(
                     if (resultEpoch == UltraPrivacyEpoch.current() &&
                         resultGame == latestGame && latestEnabled
                     ) {
-                        latestUseText(textResult)
+                        latestUseText(
+                            textResult,
+                            UltraVisualDraftPolicy.Origin(
+                                privacyEpoch = resultEpoch!!,
+                                gamePackage = resultGame
+                            )
+                        )
                     }
                 }
             ) { Text("Preparar consulta con Ultra") }
@@ -227,22 +234,31 @@ internal fun UltraVoluntaryVisualCard(
                         }
                         confirmationOpen = false
                         ticket = null
-                        if (approved == null) {
+                        if (approved == null ||
+                            !UltraPrivacyEpoch.isCurrent(approved.privacyEpoch) ||
+                            approved.gamePackage != latestGame
+                        ) {
                             revoke()
                             notice = "La autorización caducó; elige otra imagen."
                         } else {
-                            val acceptedEpoch = UltraPrivacyEpoch.current()
-                            val acceptedGame = latestGame
+                            val acceptedEpoch = approved.privacyEpoch
+                            val acceptedGame = approved.gamePackage
                             busy = true
                             notice = "Analizando solo en el dispositivo…"
                             val signal = CancellationSignal()
-                            val control = UltraVisualReadControl { signal.cancel() }
+                            val control = UltraVisualReadControl(
+                                cancelProvider = { signal.cancel() },
+                                isConsentCurrent = { UltraPrivacyEpoch.isCurrent(acceptedEpoch) }
+                            )
                             readControl = control
                             work = scope.launch {
                                 val currentWork = currentCoroutineContext()[Job]
                                 try {
                                     val extracted = withContext(Dispatchers.IO) {
-                                        val approvedUri = Uri.parse(approved)
+                                        // An external erase can race the UI handoff;
+                                        // the original immutable epoch stays authoritative.
+                                        control.ensureActive()
+                                        val approvedUri = Uri.parse(approved.uri)
                                         if (ocrOverride == null) {
                                             UltraVisualOcr.readApprovedImage(context, approvedUri, control, signal)
                                         } else {
