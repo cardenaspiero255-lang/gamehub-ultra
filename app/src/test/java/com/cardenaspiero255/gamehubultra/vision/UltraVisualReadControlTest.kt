@@ -81,7 +81,7 @@ class UltraVisualReadControlTest {
         val ticket = gate.beginUserSelection("game.a")
         assertTrue(gate.acceptPickedUri(ticket, "content://media/picker/old.png", "game.a"))
         val approved = gate.consumeAfterUserConfirmation(ticket, "game.a")
-        assertTrue(approved != null)
+            ?: error("An explicitly approved picker must return immutable consent")
         var providerCancelled = false
         val control = UltraVisualReadControl(
             cancelProvider = { providerCancelled = true },
