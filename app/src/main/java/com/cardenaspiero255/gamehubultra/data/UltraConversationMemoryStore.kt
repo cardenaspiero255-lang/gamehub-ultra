@@ -56,26 +56,18 @@ private class EncryptedUltraMemoryPersistence(
     }
 }
 
-class UltraConversationMemoryStore private constructor(
-    context: Context
+class UltraConversationMemoryStore internal constructor(
+    private val privacy: UltraMemoryPrivacyPreferences,
+    repositoryFactory: () -> UltraMemoryRepository
 ) : UltraLongTermMemoryGateway, UltraMemoryPrivacyGateway {
-    private val appContext = context.applicationContext
-    private val privateSettings = SecureCredentialStore(appContext)
-    private val privacy = UltraMemoryPrivacyPreferences(
-        read = privateSettings::get,
-        write = privateSettings::put,
-        remove = privateSettings::remove
-    )
     private val executor: ExecutorService = Executors.newSingleThreadExecutor { task ->
         Thread(task, "UltraMemoryStore").apply {
             isDaemon = true
         }
     }
-    private val repositoryProvider = UltraMemoryRepositoryProvider(executor) {
-        UltraMemoryRepository(
-            persistence = EncryptedUltraMemoryPersistence(appContext)
-        )
-    }
+    // The production singleton supplies AndroidKeyStore-backed persistence.
+    // Tests can inject in-memory persistence without mocking consent or queue semantics.
+    private val repositoryProvider = UltraMemoryRepositoryProvider(executor, repositoryFactory)
 
     init {
         repositoryProvider.prewarm()
@@ -268,8 +260,21 @@ class UltraConversationMemoryStore private constructor(
 
         fun get(context: Context): UltraConversationMemoryStore =
             instance ?: synchronized(this) {
-                instance ?: UltraConversationMemoryStore(context.applicationContext).also {
-                    instance = it
+                instance ?: run {
+                    val appContext = context.applicationContext
+                    val privateSettings = SecureCredentialStore(appContext)
+                    UltraConversationMemoryStore(
+                        privacy = UltraMemoryPrivacyPreferences(
+                            read = privateSettings::get,
+                            write = privateSettings::put,
+                            remove = privateSettings::remove
+                        ),
+                        repositoryFactory = {
+                            UltraMemoryRepository(
+                                persistence = EncryptedUltraMemoryPersistence(appContext)
+                            )
+                        }
+                    ).also { instance = it }
                 }
             }
     }
