@@ -181,6 +181,27 @@ class UltraGamingIntelligenceV3Test {
     }
 
     @Test
+    fun explicitOtherGameCannotReadCurrentGameDiagnostics() {
+        val current = window(listOf(sample(5_000), sample(8_000), sample(11_000)))
+        val other = UltraGamingIntelligenceV3.answer(
+            "¿Cuántos FPS tiene mi juego com.other.game?",
+            game, current, now
+        ).orEmpty()
+        assertFalse(other.contains("120 Hz"), other)
+        assertContains(other, "juego indicado")
+    }
+
+    @Test
+    fun activePlayPhrasingWorksWithoutMyGameKeyword() {
+        val current = window(listOf(sample(5_000), sample(8_000), sample(11_000)))
+        val answer = UltraGamingIntelligenceV3.answer(
+            "¿Cómo rinde el juego que estoy jugando?", game, current, now
+        ).orEmpty()
+        assertContains(answer, "FPS del juego no medidos")
+        assertContains(answer, "120 Hz")
+    }
+
+    @Test
     fun invalidTimeBoundsCannotResurrectStaleOrUnrelatedSessions() {
         val active = window(
             samples = listOf(sample(4_000), sample(8_000), sample(12_000)),
