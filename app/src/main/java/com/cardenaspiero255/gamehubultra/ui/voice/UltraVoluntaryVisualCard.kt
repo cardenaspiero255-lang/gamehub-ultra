@@ -32,6 +32,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -187,6 +188,7 @@ internal fun UltraVoluntaryVisualCard(
                             busy = true
                             notice = "Analizando solo en el dispositivo…"
                             work = scope.launch {
+                                val currentWork = currentCoroutineContext()[Job]
                                 try {
                                     val extracted = withContext(Dispatchers.IO) {
                                         UltraVisualOcr.readApprovedImage(context, Uri.parse(approved))
@@ -212,9 +214,20 @@ internal fun UltraVoluntaryVisualCard(
                                         notice = "No fue posible leer esta imagen localmente."
                                     }
                                 } finally {
-                                    if (isActive && latestEnabled && UltraPrivacyEpoch.isCurrent(acceptedEpoch) &&
-                                        latestGame == acceptedGame
-                                    ) busy = false
+                                    // Revoked results are suppressed, but the matching job
+                                    // must always release its busy state, even across epoch changes.
+                                    if (work === currentWork) {
+                                        work = null
+                                        busy = false
+                                        if (!UltraPrivacyEpoch.isCurrent(acceptedEpoch) ||
+                                            latestGame != acceptedGame || !latestEnabled
+                                        ) {
+                                            textResult = ""
+                                            resultEpoch = null
+                                            resultGame = null
+                                            notice = "Autorización de imagen revocada."
+                                        }
+                                    }
                                 }
                             }
                         }
