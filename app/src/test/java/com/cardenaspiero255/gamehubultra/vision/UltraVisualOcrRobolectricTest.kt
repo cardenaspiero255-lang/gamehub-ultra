@@ -34,7 +34,11 @@ class UltraVisualOcrRobolectricTest {
         override fun onCreate(): Boolean = true
         override fun query(uri: Uri, projection: Array<String>?, selection: String?,
             selectionArgs: Array<String>?, sortOrder: String?): Cursor? = null
-        override fun getType(uri: Uri): String? = mime
+        var typeLookups = 0
+        override fun getType(uri: Uri): String? {
+            typeLookups++
+            return mime
+        }
         override fun insert(uri: Uri, values: ContentValues?): Uri? = null
         override fun delete(uri: Uri, selection: String?, selectionArgs: Array<String>?): Int = 0
         override fun update(uri: Uri, values: ContentValues?, selection: String?,
@@ -100,6 +104,18 @@ class UltraVisualOcrRobolectricTest {
             )
         }
         Unit
+    }
+
+    @Test fun validPickerImageCanBeDecodedWithoutBlockingOnUntrustedMimeLookup() = runBlocking {
+        val provider = ImageProvider(png(), mime = "text/plain")
+        val uri = register(provider)
+        val text = UltraVisualOcr.readApprovedImage(
+            RuntimeEnvironment.getApplication(), uri,
+            UltraVisualReadControl(), CancellationSignal(),
+            recognizeOverride = { "INFERENCIA LOCAL" }
+        )
+        assertEquals("INFERENCIA LOCAL", text)
+        assertEquals(0, provider.typeLookups, "No synchronous ContentResolver.getType before provider cancellation")
     }
 
     @Test fun invalidImagePixelsCannotReachRecognizer() = runBlocking {
