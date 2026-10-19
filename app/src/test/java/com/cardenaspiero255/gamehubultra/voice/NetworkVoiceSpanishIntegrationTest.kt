@@ -9,6 +9,7 @@ import com.cardenaspiero255.gamehubultra.network.NetworkOptimizationResultPolicy
 import com.cardenaspiero255.gamehubultra.network.NetworkPriorityAction
 import com.cardenaspiero255.gamehubultra.network.NetworkLeaseGenerationPolicy
 import com.cardenaspiero255.gamehubultra.network.NetworkOptimizationOutcome
+import com.cardenaspiero255.gamehubultra.network.diagnostics.NetworkGamingDiagnosticSample
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityTelemetry
 import com.cardenaspiero255.gamehubultra.platform.RouterDiscoveryParser
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
@@ -17,6 +18,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class NetworkVoiceSpanishIntegrationTest {
@@ -171,12 +173,14 @@ class NetworkVoiceSpanishIntegrationTest {
                     downstreamBandwidthKbps = 500_000,
                     latencyMs = 41L
                 )
-            )
+            ),
+            latencyMeasured = true
         )
 
         requireNotNull(snapshot)
         assertEquals(38.0, snapshot.metrics.averageLatencyMs)
-        assertEquals(NetworkGameProfile.COMPETITIVE, snapshot.recommendedProfile)
+        assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
+        assertFalse(assertNotNull(snapshot.diagnostics).packetLossMeasured)
     }
 
     @Test
@@ -198,6 +202,184 @@ class NetworkVoiceSpanishIntegrationTest {
         requireNotNull(snapshot)
         assertEquals(NetworkStability.UNMEASURED, snapshot.metrics.stability)
         assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
+    }
+
+
+    @Test
+    fun voiceStatusExposesCar51SpikeDiagnosticsWithoutInventedLoss() {
+        val samples = listOf(40L, 42L, 41L, 180L, 43L).map { latency ->
+            ConnectivityTelemetry(
+                networkHandle = 8L,
+                connected = true,
+                validated = true,
+                metered = false,
+                transport = "Wi-Fi",
+                downstreamBandwidthKbps = 100_000,
+                latencyMs = latency
+            )
+        }
+        val snapshot = assertNotNull(
+            VoiceNetworkSnapshotFactory.from(samples, latencyMeasured = true)
+        )
+        assertEquals(1, assertNotNull(snapshot.diagnostics).metrics.spikeCount)
+        assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
+        val report = VoiceActionResult.NetworkReport(
+            request = NetworkVoiceRequest.STATUS,
+            snapshot = snapshot,
+            optimizationOutcome = NetworkOptimizationOutcome.NOT_REQUESTED
+        )
+        val spoken = NetworkVoiceResponseText.format(report).lowercase()
+        assertTrue(spoken.contains("picos de latencia: 1"))
+        assertTrue(spoken.contains("pérdida de paquetes todavía no medida"))
+    }
+
+
+    @Test
+    fun networkHandoffIsRetainedAndReportedWithoutReusingPreviousNetworkLatency() {
+        val wifi = NetworkGamingDiagnosticSample(
+            timestampMs = 1_000L,
+            networkHandle = 7L,
+            transport = "Wi-Fi",
+            connected = true,
+            validated = true,
+            metered = false,
+            latencyMs = 35L,
+            latencyMeasured = true,
+            packetLossPercent = null,
+            packetLossMeasured = false
+        )
+        val cellular = wifi.copy(
+            timestampMs = 2_000L,
+            networkHandle = 8L,
+            transport = "Móvil",
+            metered = true,
+            latencyMs = 180L
+        )
+        val first = VoiceNetworkSnapshotFactory.appendHistory(emptyList(), wifi)
+        val history = VoiceNetworkSnapshotFactory.appendHistory(first, cellular)
+        assertEquals(listOf(7L, 8L), history.map { it.networkHandle })
+
+        val snapshot = assertNotNull(
+            VoiceNetworkSnapshotFactory.fromMeasurements(history)
+        )
+        val diagnostics = assertNotNull(snapshot.diagnostics)
+        assertEquals(1, diagnostics.networkHandleChangeCount)
+        assertEquals("Wi-Fi", diagnostics.transportChanges.single().fromTransport)
+        assertEquals("Móvil", diagnostics.transportChanges.single().toTransport)
+        assertEquals(listOf(180L), diagnostics.latencyHistoryMs)
+        assertEquals(NetworkStability.UNMEASURED, snapshot.metrics.stability)
+        assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
+        val report = VoiceActionResult.NetworkReport(
+            request = NetworkVoiceRequest.STATUS,
+            snapshot = snapshot,
+            optimizationOutcome = NetworkOptimizationOutcome.NOT_REQUESTED
+        )
+        assertTrue(
+            NetworkVoiceResponseText.format(report)
+                .contains("cambios de conectividad detectados")
+        )
+    }
+
+    @Test
+    fun retainedNetworkHistoryRemainsBoundedAcrossMultipleSwitches() {
+        val sample = NetworkGamingDiagnosticSample(
+            timestampMs = 0L,
+            networkHandle = 1L,
+            transport = "Wi-Fi",
+            connected = true,
+            validated = true,
+            metered = false,
+            latencyMs = 30L,
+            latencyMeasured = true,
+            packetLossPercent = null,
+            packetLossMeasured = false
+        )
+        val history = (0L..7L).fold(emptyList<NetworkGamingDiagnosticSample>()) {
+            previous, index ->
+            VoiceNetworkSnapshotFactory.appendHistory(
+                previous,
+                sample.copy(
+                    timestampMs = index * 1_000L,
+                    networkHandle = index + 1L
+                )
+            )
+        }
+        assertEquals(6, history.size)
+        assertEquals(3L, history.first().networkHandle)
+        assertEquals(8L, history.last().networkHandle)
+    }
+
+    @Test
+    fun offlineNetworkReportNeverReusesPreviouslyMeasuredLatency() {
+        val connected = ConnectivityTelemetry(
+            networkHandle = 9L,
+            connected = true,
+            validated = true,
+            metered = false,
+            transport = "Wi-Fi",
+            downstreamBandwidthKbps = 100_000,
+            latencyMs = 25L
+        )
+        val offline = connected.copy(connected = false, validated = false, latencyMs = null)
+        val snapshot = assertNotNull(
+            VoiceNetworkSnapshotFactory.from(
+                listOf(connected, connected, connected, offline),
+                latencyMeasured = true
+            )
+        )
+        assertEquals(NetworkStability.OFFLINE, snapshot.metrics.stability)
+        assertEquals(null, snapshot.metrics.averageLatencyMs)
+        assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
+    }
+
+    @Test
+    fun unverifiedLegacyLatencyIsNotTreatedAsMeasured() {
+        val snapshot = assertNotNull(
+            VoiceNetworkSnapshotFactory.from(
+                listOf(
+                    ConnectivityTelemetry(8L, true, true, false, "Wi-Fi", 100_000, 15L),
+                    ConnectivityTelemetry(8L, true, true, false, "Wi-Fi", 100_000, 20L),
+                    ConnectivityTelemetry(8L, true, true, false, "Wi-Fi", 100_000, 18L)
+                )
+            )
+        )
+        assertEquals(NetworkStability.UNMEASURED, snapshot.metrics.stability)
+        assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
+    }
+
+
+    @Test
+    fun offlineNetworkOptimizeDoesNotInvokeMutableNetworkAction() {
+        val disconnected = assertNotNull(
+            VoiceNetworkSnapshotFactory.from(
+                listOf(ConnectivityTelemetry(
+                    networkHandle = null,
+                    connected = false,
+                    validated = false,
+                    metered = true,
+                    transport = null,
+                    downstreamBandwidthKbps = null,
+                    latencyMs = null
+                ))
+            )
+        )
+        var mutationCalls = 0
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.Network(NetworkVoiceRequest.OPTIMIZE),
+            gamesProvider = { emptyList() },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            networkStatusProvider = { disconnected },
+            applyNetworkProfile = {
+                mutationCalls++
+                NetworkOptimizationOutcome.APPLIED
+            }
+        )
+        assertEquals(0, mutationCalls)
+        assertIs<VoiceActionResult.NotAvailable>(result)
     }
 
     @Test
