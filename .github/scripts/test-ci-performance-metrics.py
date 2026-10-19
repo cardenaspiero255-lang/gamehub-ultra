@@ -345,6 +345,38 @@ class CiPerformanceMetricsTests(unittest.TestCase):
         self.assertEqual(request.call_count, 3)
         self.assertEqual([c.args[0] for c in sleep.call_args_list], [1, 2])
 
+    def test_http_429_with_retry_after_must_not_use_short_gateway_backoff(self):
+        url = "https://api.github.com/repos/owner/repo/actions/runs/42"
+        errors = [
+            urllib.error.HTTPError(
+                url, 429, "Too Many Requests", {"Retry-After": "90"},
+                BytesIO(b'{"message":"rate limited"}'),
+            )
+            for _ in range(3)
+        ]
+        with mock.patch.object(metrics.urllib.request, "urlopen", side_effect=errors) as request, \
+             mock.patch.object(metrics.time, "sleep") as sleep:
+            with self.assertRaises(metrics.GitHubApiError) as caught:
+                metrics._get_json(url, "private-test-token")
+        self.assertEqual(caught.exception.status, 429)
+        self.assertEqual(request.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_http_429_without_retry_after_is_also_terminal(self):
+        url = "https://api.github.com/repos/owner/repo/actions/runs/42"
+        errors = [
+            urllib.error.HTTPError(url, 429, "Too Many Requests", {},
+                                    BytesIO(b'{"message":"rate limited"}'))
+            for _ in range(3)
+        ]
+        with mock.patch.object(metrics.urllib.request, "urlopen", side_effect=errors) as request, \
+             mock.patch.object(metrics.time, "sleep") as sleep:
+            with self.assertRaises(metrics.GitHubApiError) as caught:
+                metrics._get_json(url, "private-test-token")
+        self.assertEqual(caught.exception.status, 429)
+        self.assertEqual(request.call_count, 1)
+        sleep.assert_not_called()
+
     def test_http_401_never_retries_and_does_not_expose_token(self):
         url = "https://api.github.com/repos/owner/repo/actions/runs/42"
         err = urllib.error.HTTPError(url, 401, "Unauthorized", {},
