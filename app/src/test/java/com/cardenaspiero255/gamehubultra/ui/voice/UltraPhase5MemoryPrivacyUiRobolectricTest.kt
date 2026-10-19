@@ -56,12 +56,12 @@ class UltraPhase5MemoryPrivacyUiRobolectricTest {
             rule.onAllNodesWithText("Historial del juego actual borrado.").fetchSemanticsNodes().isNotEmpty()
         }
         Mockito.verify(store).clearConversationHistory(UltraMemoryScope(userId = "local"))
-        rule.onNodeWithText("Borrar toda mi memoria").performClick()
+        rule.onNodeWithText("Borrar toda mi memoria").performScrollTo().performClick()
         rule.onNodeWithText("Confirmar borrado de memoria").assertExists()
         rule.onNodeWithTag("ultra-erase-cancel").assertExists().performClick()
         Mockito.verify(store, Mockito.never()).deleteAllPrivateMemory()
         rule.onNodeWithText("Memoria privada de Ultra").assertExists()
-        rule.onNodeWithText("Borrar toda mi memoria").performClick()
+        rule.onNodeWithText("Borrar toda mi memoria").performScrollTo().performClick()
         rule.onNodeWithText("Confirmar borrado de memoria").assertExists()
         rule.onNodeWithTag("ultra-erase-confirm").performClick()
         rule.waitUntil(10000) {
