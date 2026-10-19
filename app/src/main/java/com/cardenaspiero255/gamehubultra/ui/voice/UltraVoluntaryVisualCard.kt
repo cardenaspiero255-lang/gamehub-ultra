@@ -15,6 +15,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +49,7 @@ internal fun UltraVoluntaryVisualCard(
     val latestGame by rememberUpdatedState(gamePackage)
     val latestEnabled by rememberUpdatedState(enabled)
     val latestUseText by rememberUpdatedState(onUseRecognizedText)
+    val privacyRevision by UltraPrivacyEpoch.changes.collectAsState()
     var ticket by remember { mutableStateOf<Long?>(null) }
     var pickerOpen by remember { mutableStateOf(false) }
     var confirmationOpen by remember { mutableStateOf(false) }
@@ -88,6 +90,12 @@ internal fun UltraVoluntaryVisualCard(
     }
 
     LaunchedEffect(gamePackage) {
+        revoke()
+        notice = ""
+    }
+    // React to privacy erasure even when it originates in another component.
+    // The StateFlow is monotonic, preventing stale image text from lingering.
+    LaunchedEffect(privacyRevision) {
         revoke()
         notice = ""
     }
