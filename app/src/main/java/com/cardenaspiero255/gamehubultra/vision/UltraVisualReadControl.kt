@@ -12,7 +12,8 @@ import java.util.concurrent.atomic.AtomicReference
  * ContentResolver's CancellationSignal is cancelled separately by the caller.
  */
 internal class UltraVisualReadControl(
-    private val cancelProvider: () -> Unit = {}
+    private val cancelProvider: () -> Unit = {},
+    private val isConsentCurrent: () -> Boolean = { true }
 ) {
     private val revoked = AtomicBoolean(false)
     private val activeStream = AtomicReference<InputStream?>(null)
@@ -20,7 +21,13 @@ internal class UltraVisualReadControl(
     val isRevoked: Boolean get() = revoked.get()
 
     fun ensureActive() {
-        if (revoked.get()) throw CancellationException("Image read consent revoked")
+        // The UI StateFlow may not have observed a privacy erase yet.
+        // Keep the immutable original authorization as the source of truth.
+        val consentCurrent = runCatching { isConsentCurrent() }.getOrDefault(false)
+        if (revoked.get() || !consentCurrent) {
+            revoke()
+            throw CancellationException("Image read consent revoked")
+        }
     }
 
     fun attach(stream: InputStream): InputStream {
@@ -28,10 +35,14 @@ internal class UltraVisualReadControl(
             closeQuietly(stream)
             throw IllegalStateException("Concurrent provider read not permitted")
         }
-        if (revoked.get()) {
+        // Attach the stream before the epoch re-check so revocation closes
+        // a provider already starting to read.
+        try {
+            ensureActive()
+        } catch (error: CancellationException) {
             activeStream.compareAndSet(stream, null)
             closeQuietly(stream)
-            throw CancellationException("Image read consent revoked")
+            throw error
         }
         return stream
     }
