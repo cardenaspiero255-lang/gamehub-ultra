@@ -39,7 +39,13 @@ class UltraVoluntaryVisualCardRobolectricTest {
             UltraVoluntaryVisualCard(
                 gamePackage = game,
                 enabled = enabled,
-                onUseRecognizedText = { shared.add(it) },
+                onUseRecognizedText = { recognized, origin ->
+                    // The parent must receive the original consent scope,
+                    // rather than assigning the latest epoch after an erase.
+                    assertEquals(UltraPrivacyEpoch.current(), origin.privacyEpoch)
+                    assertEquals(game, origin.gamePackage)
+                    shared.add(recognized)
+                },
                 pickerOverride = { callback -> selected = callback },
                 ocrOverride = { _, _, _, _ -> read() }
             )
