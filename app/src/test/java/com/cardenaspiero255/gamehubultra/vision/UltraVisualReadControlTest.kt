@@ -57,6 +57,21 @@ class UltraVisualReadControlTest {
         assertTrue(didClose)
     }
 
+    @Test fun epochInvalidationFailsClosedBeforeProviderReadEvenIfUiHasNotRecomposed() {
+        var authorized = true
+        var cancelled = false
+        val control = UltraVisualReadControl(
+            cancelProvider = { cancelled = true },
+            isConsentCurrent = { authorized }
+        )
+        control.ensureActive()
+        authorized = false
+        assertFailsWith<CancellationException> { control.ensureActive() }
+        assertTrue(cancelled)
+        assertTrue(control.isRevoked)
+        assertFailsWith<CancellationException> { control.attach(ByteArrayInputStream(byteArrayOf(1))) }
+    }
+
     @Test fun repeatedRevocationIsIdempotentAndDoesNotCloseUnrelatedStream() {
         val control = UltraVisualReadControl()
         val stream = ByteArrayInputStream(byteArrayOf(1, 2))
