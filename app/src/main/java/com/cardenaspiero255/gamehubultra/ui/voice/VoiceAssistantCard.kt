@@ -937,14 +937,20 @@ applyNetworkProfile = networkGaming::applyProfile
                     enabled = assistantInputEnabled,
                     pickerOverride = visualPickerOverride,
                     ocrOverride = visualOcrOverride,
-                    onUseRecognizedText = { extracted ->
-                        visualDraftOrigin = UltraVisualDraftPolicy.Origin(
-                            privacyEpoch = UltraPrivacyEpoch.current(),
-                            gamePackage = latestAiContext.selectedGamePackage
-                        )
-                        chatMessage = ("Ayúdame a interpretar este texto de una imagen elegida por mí:\n" +
-                            extracted.take(800)).take(1000)
-                        showTextChat = true
+                    onUseRecognizedText = { extracted, authorizedOrigin ->
+                        // Never restamp old OCR bytes with a newly observed epoch.
+                        // The child supplies the immutable scope captured at picker consent.
+                        if (UltraVisualDraftPolicy.canSend(
+                                authorizedOrigin,
+                                UltraPrivacyEpoch.current(),
+                                latestAiContext.selectedGamePackage
+                            )
+                        ) {
+                            visualDraftOrigin = authorizedOrigin
+                            chatMessage = ("Ayúdame a interpretar este texto de una imagen elegida por mí:\n" +
+                                extracted.take(800)).take(1000)
+                            showTextChat = true
+                        }
                     }
                 )
             }
