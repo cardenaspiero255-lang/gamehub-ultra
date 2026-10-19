@@ -3,6 +3,7 @@ package com.cardenaspiero255.gamehubultra.vision
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.CancellationSignal
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
@@ -15,7 +16,13 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 internal object UltraVisualOcr {
     private const val MAX_SIDE = 4096
 
-    suspend fun readApprovedImage(context: Context, uri: Uri): String {
+    suspend fun readApprovedImage(
+        context: Context,
+        uri: Uri,
+        control: UltraVisualReadControl,
+        signal: CancellationSignal
+    ): String {
+        control.ensureActive()
         require(uri.scheme == "content" && !uri.authority.isNullOrBlank()) {
             "A system-selected image is required"
         }
@@ -26,9 +33,18 @@ internal object UltraVisualOcr {
         }
         // Photo-picker providers may expose an unknown AssetFileDescriptor length.
         // Read exactly once under a strict limit before decoding the image.
-        val imageBytes = resolver.openInputStream(uri)?.use { stream ->
-            UltraBoundedImageBytes.read(stream)
-        } ?: throw IllegalArgumentException("The selected image is unavailable")
+        val descriptor = resolver.openAssetFileDescriptor(uri, "r", signal)
+            ?: throw IllegalArgumentException("The selected image is unavailable")
+        val imageBytes = descriptor.use { provider ->
+            control.ensureActive()
+            val input = control.attach(provider.createInputStream())
+            try {
+                input.use { UltraBoundedImageBytes.read(it, activeCheck = control::ensureActive) }
+            } finally {
+                control.release(input)
+            }
+        }
+        control.ensureActive()
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, bounds)
         require(bounds.outWidth in 1..MAX_SIDE && bounds.outHeight in 1..MAX_SIDE) {
@@ -36,6 +52,7 @@ internal object UltraVisualOcr {
         }
         val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
             ?: throw IllegalArgumentException("The selected data is not a valid image")
+        control.ensureActive()
         val image = InputImage.fromBitmap(bitmap, 0)
         return suspendCancellableCoroutine { continuation ->
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -45,7 +62,10 @@ internal object UltraVisualOcr {
             val releaseRecognizer: () -> Unit = {
                 if (closed.compareAndSet(false, true)) recognizer.close()
             }
-            continuation.invokeOnCancellation { releaseRecognizer() }
+            continuation.invokeOnCancellation {
+                control.revoke()
+                releaseRecognizer()
+            }
             try {
                 recognizer.process(image)
                     .addOnSuccessListener { result ->
