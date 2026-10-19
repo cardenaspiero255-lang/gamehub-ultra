@@ -18,6 +18,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 
 /** Real Compose/Robolectric coverage of the user-facing privacy boundaries. */
 @RunWith(RobolectricTestRunner::class)
@@ -31,7 +33,8 @@ class UltraVoluntaryVisualCardRobolectricTest {
     private val pickedUri = Uri.parse("content://media/picker/image.png")
 
     private fun mount(
-        read: suspend () -> String = { "CODIGO CONFIDENCIAL" }
+        read: suspend () -> String = { "CODIGO CONFIDENCIAL" },
+        onRecognized: ((String, com.cardenaspiero255.gamehubultra.vision.UltraVisualDraftPolicy.Origin) -> Unit)? = null
     ) {
         selected = null
         shared = mutableListOf()
@@ -40,11 +43,15 @@ class UltraVoluntaryVisualCardRobolectricTest {
                 gamePackage = game,
                 enabled = enabled,
                 onUseRecognizedText = { recognized, origin ->
-                    // The parent must receive the original consent scope,
-                    // rather than assigning the latest epoch after an erase.
-                    assertEquals(UltraPrivacyEpoch.current(), origin.privacyEpoch)
-                    assertEquals(game, origin.gamePackage)
-                    shared.add(recognized)
+                    // Tests may invalidate during the parent callback to prove
+                    // that the callback never restamps private image provenance.
+                    if (onRecognized != null) {
+                        onRecognized(recognized, origin)
+                    } else {
+                        assertEquals(UltraPrivacyEpoch.current(), origin.privacyEpoch)
+                        assertEquals(game, origin.gamePackage)
+                        shared.add(recognized)
+                    }
                 },
                 pickerOverride = { callback -> selected = callback },
                 ocrOverride = { _, _, _, _ -> read() }
@@ -75,6 +82,24 @@ class UltraVoluntaryVisualCardRobolectricTest {
         assertEquals(0, shared.size)
         rule.onNodeWithTag("ultra-visual-use-text").performClick()
         assertEquals(listOf("CODIGO CONFIDENCIAL"), shared)
+    }
+
+    @Test fun parentHandoffKeepsOriginalEpochIfErasureRacesInsideTheCallback() {
+        var captured: com.cardenaspiero255.gamehubultra.vision.UltraVisualDraftPolicy.Origin? = null
+        mount(onRecognized = { _, origin ->
+            captured = origin
+            UltraPrivacyEpoch.invalidate()
+        })
+        pick()
+        confirm()
+        rule.waitUntil(12000) {
+            rule.onAllNodesWithText("CODIGO CONFIDENCIAL").fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithTag("ultra-visual-use-text").performClick()
+        val origin = assertNotNull(captured)
+        assertFalse(com.cardenaspiero255.gamehubultra.vision.UltraVisualDraftPolicy.canSend(
+            origin, UltraPrivacyEpoch.current(), "game.a"
+        ))
     }
 
     @Test fun dismissingConfirmationNeverStartsAnOcrRead() {
