@@ -7,13 +7,15 @@ import java.io.InputStream
 internal object UltraBoundedImageBytes {
     private const val MAX_BYTES = 8 * 1024 * 1024
 
-    fun read(source: InputStream, limit: Int = MAX_BYTES): ByteArray {
+    fun read(source: InputStream, limit: Int = MAX_BYTES, activeCheck: () -> Unit = {}): ByteArray {
         require(limit in 1..MAX_BYTES) { "Invalid image byte budget" }
         val output = ByteArrayOutputStream()
         val chunk = ByteArray(8192)
         var consecutiveEmptyReads = 0
         while (true) {
+            activeCheck()
             val n = source.read(chunk)
+            activeCheck()
             if (n < 0) break
             if (n == 0) {
                 consecutiveEmptyReads++
@@ -24,6 +26,7 @@ internal object UltraBoundedImageBytes {
             require(n <= limit - output.size()) { "Image exceeds the 8 MiB limit" }
             output.write(chunk, 0, n)
         }
+        activeCheck()
         require(output.size() > 0) { "Selected image is empty" }
         return output.toByteArray()
     }
