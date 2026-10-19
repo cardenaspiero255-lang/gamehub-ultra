@@ -75,7 +75,17 @@ test('Security RED: scripts with tainted eval tokens are a BLOCKER, not merely i
 });
 test('Security RED: post CI refuses stale SHA before calling setFailed on UNTRUSTED',()=>{
  const s=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-sss-post-ci.yml'),'utf8');
- assert.ok(s.indexOf("if(ci.status!=='PASS')core.setFailed")>s.indexOf('const {data: latest}=await github.rest.pulls.get'),s);
+  const latestGuard=s.indexOf('latest.head.sha!==run.head_sha');
+  const resultGuard=s.indexOf("if(decision.action==='BLOCK')");
+  assert.ok(latestGuard>=0&&resultGuard>latestGuard,
+   'Stale-HEAD check must precede every blocking/verified conclusion');
+  assert.match(s,/postCiDisposition\(args\)/);
+  const {postCiDisposition}=require('./ultra_sentinel_post_ci_state.cjs');
+  const stale=postCiDisposition({sourceSha:SHA,linkedCount:1,
+   eligibleCount:0,ciStatuses:[]});
+  assert.equal(stale.status,'STALE');assert.equal(stale.attested,false);
+  assert.equal(postCiDisposition({sourceSha:SHA,linkedCount:1,
+   eligibleCount:1,ciStatuses:['UNTRUSTED']}).action,'BLOCK');
 });
 test('Security RED: all review paths share privileged events',()=>{
  const s=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_supply_chain.cjs'),'utf8');
