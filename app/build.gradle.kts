@@ -248,6 +248,10 @@ tasks.withType<Test>().configureEach {
     forkEvery = 0L
     maxHeapSize = gameHubUnitTestHeap.get()
     jvmArgs("-XX:+UseParallelGC")
+    // Keep the complete causal stack for Robolectric/Compose failures in CI logs.
+    testLogging {
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
     extensions.configure<JacocoTaskExtension> {
         isIncludeNoLocationClasses = true
         excludes = listOf("jdk.internal.*")
