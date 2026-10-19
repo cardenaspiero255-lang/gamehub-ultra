@@ -112,6 +112,24 @@ class UltraVoluntaryVisualSessionTest {
         assertNull(gate.consumeAfterUserConfirmation(ticket, "game.a"))
     }
 
+    @Test fun approvedSelectionPreservesItsOriginalPrivacyEpochAcrossEraseRace() {
+        val gate = session()
+        val ticket = gate.beginUserSelection("game.a")
+        assertTrue(gate.acceptPickedUri(ticket, uri, "game.a"))
+        val approved = gate.consumeAfterUserConfirmation(ticket, "game.a")
+        assertEquals(uri, approved?.uri)
+        assertEquals(7L, approved?.privacyEpoch)
+        assertEquals("game.a", approved?.gamePackage)
+        // An erase after confirmation cannot relabel a previously approved
+        // image with the new epoch and silently re-authorize it.
+        epoch++
+        assertEquals(7L, approved?.privacyEpoch)
+        assertFalse(UltraVisualDraftPolicy.canSend(
+            UltraVisualDraftPolicy.Origin(approved!!.privacyEpoch, approved.gamePackage),
+            epoch, "game.a"
+        ))
+    }
+
     @Test fun confirmedCandidateExpiresBeforeUserApproves() {
         val gate = session()
         val ticket = gate.beginUserSelection("game.a")
