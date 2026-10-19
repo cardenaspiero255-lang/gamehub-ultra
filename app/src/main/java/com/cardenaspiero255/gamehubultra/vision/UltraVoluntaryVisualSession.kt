@@ -43,6 +43,9 @@ internal class UltraVoluntaryVisualSession(
     fun awaitingConfirmation(ticket: Long, gamePackage: String?): Boolean {
         val item = selection ?: return false
         val now = monotonicMillis()
+        // A delayed callback for an *older* picker must not revoke the
+        // user's newer selection. A future/unrecognized ticket stays fail-closed.
+        if (ticket < item.id) return false
         val accepted = item.id == ticket && item.uri != null &&
             valid(item, gamePackage, now, 180_000L) &&
             elapsed(item.selected, now, 120_000L)
@@ -53,6 +56,10 @@ internal class UltraVoluntaryVisualSession(
     @Synchronized
     fun consumeAfterUserConfirmation(ticket: Long, gamePackage: String?): String? {
         val item = selection ?: return null
+        // The previous chooser can finish after a new chooser starts.
+        // Ignore this obsolete ticket, preserving the newer authorization.
+        // An unknown future ticket is invalid and cancels the current image.
+        if (ticket < item.id) return null
         selection = null
         val now = monotonicMillis()
         return item.uri.takeIf {
