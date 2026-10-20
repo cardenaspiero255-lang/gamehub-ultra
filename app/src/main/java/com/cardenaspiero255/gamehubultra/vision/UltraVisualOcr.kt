@@ -3,7 +3,6 @@ package com.cardenaspiero255.gamehubultra.vision
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
 import android.os.CancellationSignal
@@ -147,29 +146,50 @@ internal object UltraVisualOcr {
         }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
     }
 
-    /** Normalize all eight EXIF orientations before delivering pixels to OCR. */
+    /**
+     * Explicit pixel mapping makes orientation deterministic in Android and
+     * Robolectric alike (the bitmap Matrix shadow can silently drop pixels).
+     * One scratch row, one output bitmap; never buffer a second full image.
+     */
     internal fun normalizeBitmapOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
-        val transform = Matrix()
-        when (orientation) {
-            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> transform.postScale(-1f, 1f)
-            ExifInterface.ORIENTATION_ROTATE_180 -> transform.postRotate(180f)
-            ExifInterface.ORIENTATION_FLIP_VERTICAL -> transform.postScale(1f, -1f)
-            ExifInterface.ORIENTATION_TRANSPOSE -> {
-                transform.postRotate(90f)
-                transform.postScale(-1f, 1f)
-            }
-            ExifInterface.ORIENTATION_ROTATE_90 -> transform.postRotate(90f)
-            ExifInterface.ORIENTATION_TRANSVERSE -> {
-                transform.postRotate(270f)
-                transform.postScale(-1f, 1f)
-            }
-            ExifInterface.ORIENTATION_ROTATE_270 -> transform.postRotate(270f)
-            else -> return bitmap
-        }
-        return Bitmap.createBitmap(
-            bitmap, 0, 0, bitmap.width, bitmap.height, transform, true
+        val swapAxes = orientation in listOf(
+            ExifInterface.ORIENTATION_TRANSPOSE,
+            ExifInterface.ORIENTATION_ROTATE_90,
+            ExifInterface.ORIENTATION_TRANSVERSE,
+            ExifInterface.ORIENTATION_ROTATE_270
         )
+        if (orientation !in ExifInterface.ORIENTATION_FLIP_HORIZONTAL..
+            ExifInterface.ORIENTATION_ROTATE_270) return bitmap
+        val width = bitmap.width
+        val height = bitmap.height
+        val outWidth = if (swapAxes) height else width
+        val outHeight = if (swapAxes) width else height
+        val output = Bitmap.createBitmap(outWidth, outHeight, Bitmap.Config.ARGB_8888)
+        val row = IntArray(width)
+        for (y in 0 until height) {
+            bitmap.getPixels(row, 0, width, 0, y, width, 1)
+            val reverseX = orientation in listOf(
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL,
+                ExifInterface.ORIENTATION_ROTATE_180,
+                ExifInterface.ORIENTATION_TRANSVERSE,
+                ExifInterface.ORIENTATION_ROTATE_270
+            )
+            if (reverseX) row.reverse()
+            when (orientation) {
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL ->
+                    output.setPixels(row, 0, width, 0, y, width, 1)
+                ExifInterface.ORIENTATION_ROTATE_180,
+                ExifInterface.ORIENTATION_FLIP_VERTICAL ->
+                    output.setPixels(row, 0, width, 0, height - 1 - y, width, 1)
+                ExifInterface.ORIENTATION_TRANSPOSE,
+                ExifInterface.ORIENTATION_ROTATE_270 ->
+                    output.setPixels(row, 0, 1, y, 0, 1, width)
+                ExifInterface.ORIENTATION_ROTATE_90,
+                ExifInterface.ORIENTATION_TRANSVERSE ->
+                    output.setPixels(row, 0, 1, height - 1 - y, 0, 1, width)
+            }
+        }
+        return output
     }
-
 
 }
