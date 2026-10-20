@@ -207,6 +207,7 @@ internal fun VoiceAssistantCard(
             }
         ) {
             val deviceStatus = VoiceDeviceStatusProvider.read(context)
+            queryRunner.requireCurrentDispatch(originatingGamePackage)
             val route = agentRouter.route(
                 UltraAgentRoutingRequest(
                     transcript = message.trim(),
@@ -221,8 +222,12 @@ internal fun VoiceAssistantCard(
                 )
             )
 
+            // Routing can suspend; revocation during that interval must
+            // terminate the turn before any provider or command side effect.
+            queryRunner.requireCurrentDispatch(originatingGamePackage)
             when (route) {
                 is UltraAgentRoute.Utility -> {
+                    queryRunner.requireCurrentDispatch(originatingGamePackage)
                     val answer = UltraUtilityRuntimeExecutor.executeIfCurrent(
                         answer = route.answer,
                         networkGaming = networkGaming,
@@ -243,9 +248,11 @@ internal fun VoiceAssistantCard(
                 }
 
                 is UltraAgentRoute.Chat -> {
+                    queryRunner.requireCurrentDispatch(originatingGamePackage)
                     val answer = queryExecutor.answer(
                         route = route,
                         stableKnowledgeFallback = {
+                            queryRunner.requireCurrentDispatch(originatingGamePackage)
                             aiAdvisor.generalKnowledgeChatOrNull(
                                 message = route.message,
                                 context = turnAiContext,
@@ -253,6 +260,7 @@ internal fun VoiceAssistantCard(
                             )
                         }
                     ) {
+                        queryRunner.requireCurrentDispatch(originatingGamePackage)
                         aiAdvisor.chat(
                             message = route.message,
                             context = turnAiContext,
@@ -273,6 +281,7 @@ internal fun VoiceAssistantCard(
                 }
 
                 is UltraAgentRoute.Command -> {
+                    queryRunner.requireCurrentDispatch(originatingGamePackage)
                     val result = VoiceCommandEngine.execute(
                         command = route.command,
                         gamesProvider = { GameLibrary.discover(context).games },
@@ -285,6 +294,7 @@ internal fun VoiceAssistantCard(
                         isProfileAvailable = { _ -> true },
                         statusProvider = { VoiceDeviceStatusProvider.read(context) },
                         aiAdvisor = { question ->
+                            queryRunner.requireCurrentDispatch(originatingGamePackage)
                             aiAdvisor.advise(question, latestAiContext)
                         },
                         aliasIntentResolver = aiIntentResolver,
