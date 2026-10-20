@@ -41,7 +41,9 @@ data class UltraGeneralQueryRequest(
      * diversify provider sets without changing the public query semantics.
      */
     val researchProviderOffset: Int = 0,
-    val correlationId: String = UUID.randomUUID().toString()
+    val correlationId: String = UUID.randomUUID().toString(),
+    /** Immutable epoch for an OCR-derived request, preserved by copy() across research retries. */
+    val privacyEpoch: Long? = null
 ) {
     init {
         require(researchProviderBudget == null || researchProviderBudget >= 1) {
@@ -49,6 +51,15 @@ data class UltraGeneralQueryRequest(
         }
         require(researchProviderOffset >= 0) {
             "Research provider offset cannot be negative."
+        }
+    }
+
+    fun requireCurrentPrivacy() {
+        val captured = privacyEpoch ?: return // Standard typed queries are unaffected.
+        if (!com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.isCurrent(captured)) {
+            throw java.util.concurrent.CancellationException(
+                "OCR consent invalidated before provider request"
+            )
         }
     }
 }
