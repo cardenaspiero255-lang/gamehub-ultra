@@ -266,7 +266,18 @@ class UltraVisualOcrRobolectricTest {
     @Test fun largeAllowedImageIsDownsampledBeforeOCRToStayWithinMemoryBudget() = runBlocking {
         // 2,600 x 1,200 = 3.12MP: the size is permitted by the input
         // dimensions but would exceed the private OCR bitmap budget.
-        val uri = register(ImageProvider(png(width = 2600, height = 1200)))
+        // Robolectric's Bitmap.compress may emit >8 MiB even for a flat image.
+        // Use a genuine tightly compressed PNG so this test isolates the
+        // decoded-pixel budget instead of correctly tripping the byte budget.
+        val compactPng = ByteArrayOutputStream().use { output ->
+            val image = java.awt.image.BufferedImage(
+                2600, 1200, java.awt.image.BufferedImage.TYPE_INT_ARGB
+            )
+            check(javax.imageio.ImageIO.write(image, "png", output))
+            output.toByteArray()
+        }
+        assertTrue(compactPng.size < 8 * 1024 * 1024)
+        val uri = register(ImageProvider(compactPng))
         var analyzedPixels = Long.MAX_VALUE
         val text = UltraVisualOcr.readApprovedImage(
             RuntimeEnvironment.getApplication(), uri,
