@@ -1,6 +1,11 @@
 package com.cardenaspiero255.gamehubultra.ui.voice
 
 import android.net.Uri
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,7 +70,11 @@ class UltraVisualDraftRevocationRobolectricTest {
                     publishConversation = { conversation = it }
                 )
             }
-            VoiceAssistantCard(
+            // The production HomeScreen hosts this card inside a LazyColumn.
+            // A bare 470px Robolectric root clips the OCR handoff button to 0px.
+            // Provide an equivalent scrollable viewport and assert actual reachability.
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                VoiceAssistantCard(
                 selectedProfileName = "Balanceado",
                 onProfileSelected = {},
                 onGameSelected = {},
@@ -78,7 +87,8 @@ class UltraVisualDraftRevocationRobolectricTest {
                 assistantInputEnabled = true,
                 visualPickerOverride = { cb -> callback = cb },
                 visualOcrOverride = { _, _, _, _ -> "ULTRA TEXTO PRIVADO" }
-            )
+                )
+            }
         }
     }
 
@@ -89,7 +99,7 @@ class UltraVisualDraftRevocationRobolectricTest {
         rule.waitUntil(12000) {
             rule.onAllNodesWithText("ULTRA TEXTO PRIVADO").fetchSemanticsNodes().isNotEmpty()
         }
-        rule.onNodeWithTag("ultra-visual-use-text").performClick()
+        rule.onNodeWithTag("ultra-visual-use-text").performScrollTo().performClick()
         try {
             rule.waitUntil(12000) {
                 rule.onAllNodesWithTag("ultra-chat-private-draft", useUnmergedTree = true)
