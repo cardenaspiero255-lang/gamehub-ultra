@@ -18,6 +18,9 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 /** User-approved, in-process text recognition; no network request or persistence. */
 internal object UltraVisualOcr {
     private const val MAX_SIDE = 4096
+    // Source + orientation copy stay within roughly 20 MiB for ARGB_8888.
+    private const val MAX_DECODED_PIXELS = 2_500_000L
+    private const val MAX_DECODED_SIDE = 2048
 
     // Validate well-known signatures before bitmap decoding. Keep this gate
     // separate from the reported provider MIME (which is not trustworthy).
@@ -76,8 +79,25 @@ internal object UltraVisualOcr {
         require(bounds.outWidth in 1..MAX_SIDE && bounds.outHeight in 1..MAX_SIDE) {
             "The selected image dimensions are not supported"
         }
-        val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-            ?: throw IllegalArgumentException("The selected data is not a valid image")
+        // Decode downsampled instead of allocating the full potentially
+        // 64-MiB bitmap before rotating it into another 64-MiB copy.
+        var sample = 1
+        while (bounds.outWidth.toLong() / sample *
+                (bounds.outHeight.toLong() / sample) > MAX_DECODED_PIXELS ||
+            maxOf(bounds.outWidth / sample, bounds.outHeight / sample) > MAX_DECODED_SIDE
+        ) sample *= 2
+        control.ensureActive()
+        val decodeOptions = BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val bitmap = BitmapFactory.decodeByteArray(
+            imageBytes, 0, imageBytes.size, decodeOptions
+        ) ?: throw IllegalArgumentException("The selected data is not a valid image")
+        require(bitmap.width.toLong() * bitmap.height <= MAX_DECODED_PIXELS &&
+            maxOf(bitmap.width, bitmap.height) <= MAX_DECODED_SIDE) {
+            "Image exceeds the local OCR pixel budget"
+        }
         control.ensureActive()
         // Normalize the EXIF orientation of JPEG/HEIF photographs before both
         // hermetic OCR and the ML Kit path. The image data never leaves memory.
