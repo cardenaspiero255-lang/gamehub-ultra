@@ -53,7 +53,9 @@ internal object UltraVisualOcr {
         // Internal test seam: production still resolves the real on-device ML Kit client.
         recognizerFactory: () -> TextRecognizer = {
             TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        }
+        },
+        // The input constructor initializes ML Kit; keep it replaceable in JVM tests.
+        imageFactory: (Bitmap) -> InputImage = { InputImage.fromBitmap(it, 0) }
     ): String {
         control.ensureActive()
         require(uri.scheme == "content" && !uri.authority.isNullOrBlank()) {
@@ -118,7 +120,7 @@ internal object UltraVisualOcr {
             control.ensureActive()
             return text.take(1000)
         }
-        val image = InputImage.fromBitmap(oriented, 0)
+        val image = imageFactory(oriented)
         return suspendCancellableCoroutine { continuation ->
             val recognizer = recognizerFactory()
             val closed = AtomicBoolean(false)
