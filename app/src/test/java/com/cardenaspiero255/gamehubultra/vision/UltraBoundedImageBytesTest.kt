@@ -56,4 +56,31 @@ class UltraBoundedImageBytesTest {
             UltraBoundedImageBytes.read(slow, limit = 10)
         }
     }
+    @Test fun intermittentEmptyProviderReadsAreRetriedWithoutDataLoss() {
+        val expected = byteArrayOf(1, 2, 3, 4)
+        val stream = object : ByteArrayInputStream(expected) {
+            private var transientEmpty = 3
+            override fun read(bytes: ByteArray, off: Int, len: Int): Int {
+                if (transientEmpty-- > 0) return 0
+                return super.read(bytes, off, len)
+            }
+        }
+        assertContentEquals(expected, UltraBoundedImageBytes.read(stream, limit = 20))
+    }
+
+    @Test fun permanentlyEmptyProviderStreamFailsClosedAfterEightReads() {
+        var attempts = 0
+        val stream = object : InputStream() {
+            override fun read(): Int = -1
+            override fun read(bytes: ByteArray, off: Int, len: Int): Int {
+                attempts++
+                return 0
+            }
+        }
+        assertFailsWith<IllegalArgumentException> {
+            UltraBoundedImageBytes.read(stream, limit = 20)
+        }
+        kotlin.test.assertEquals(8, attempts)
+    }
+
 }
