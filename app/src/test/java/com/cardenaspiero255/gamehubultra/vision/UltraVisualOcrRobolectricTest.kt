@@ -343,7 +343,8 @@ class UltraVisualOcrRobolectricTest {
         val text = UltraVisualOcr.readApprovedImage(
             RuntimeEnvironment.getApplication(), uri,
             UltraVisualReadControl(), CancellationSignal(),
-            recognizerFactory = { client }
+            recognizerFactory = { client },
+                imageFactory = { Mockito.mock(InputImage::class.java) }
         )
         assertEquals("A".repeat(1000), text)
         Mockito.verify(client, Mockito.times(1)).close()
@@ -358,7 +359,8 @@ class UltraVisualOcrRobolectricTest {
             UltraVisualOcr.readApprovedImage(
                 RuntimeEnvironment.getApplication(), uri,
                 UltraVisualReadControl(), CancellationSignal(),
-                recognizerFactory = { client }
+                recognizerFactory = { client },
+                imageFactory = { Mockito.mock(InputImage::class.java) }
             )
         }
         Mockito.verify(client, Mockito.times(1)).close()
@@ -372,7 +374,8 @@ class UltraVisualOcrRobolectricTest {
             UltraVisualOcr.readApprovedImage(
                 RuntimeEnvironment.getApplication(), uri,
                 control, CancellationSignal(),
-                recognizerFactory = { client }
+                recognizerFactory = { client },
+                imageFactory = { Mockito.mock(InputImage::class.java) }
             )
         }
         assertFailsWith<CancellationException> { control.ensureActive() }
@@ -388,7 +391,8 @@ class UltraVisualOcrRobolectricTest {
             UltraVisualOcr.readApprovedImage(
                 RuntimeEnvironment.getApplication(), uri,
                 UltraVisualReadControl(), CancellationSignal(),
-                recognizerFactory = { client }
+                recognizerFactory = { client },
+                imageFactory = { Mockito.mock(InputImage::class.java) }
             )
         }
         Mockito.verify(client, Mockito.times(1)).close()
