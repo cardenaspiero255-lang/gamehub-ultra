@@ -8,9 +8,11 @@ import android.net.Uri
 import android.os.CancellationSignal
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -21,6 +23,8 @@ internal object UltraVisualOcr {
     // Source + orientation copy stay within roughly 20 MiB for ARGB_8888.
     private const val MAX_DECODED_PIXELS = 2_500_000L
     private const val MAX_DECODED_SIDE = 2048
+    // Avoid tying recognizer completion to an Activity/main-looper lifetime.
+    private val callbackExecutor = Executor { task -> task.run() }
 
     // Validate well-known signatures before bitmap decoding. Keep this gate
     // separate from the reported provider MIME (which is not trustworthy).
@@ -45,7 +49,11 @@ internal object UltraVisualOcr {
         control: UltraVisualReadControl,
         signal: CancellationSignal,
         // Local inference seam for hermetic Robolectric tests; production omits it.
-        recognizeOverride: (suspend (android.graphics.Bitmap) -> String)? = null
+        recognizeOverride: (suspend (android.graphics.Bitmap) -> String)? = null,
+        // Internal test seam: production still resolves the real on-device ML Kit client.
+        recognizerFactory: () -> TextRecognizer = {
+            TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        }
     ): String {
         control.ensureActive()
         require(uri.scheme == "content" && !uri.authority.isNullOrBlank()) {
@@ -112,7 +120,7 @@ internal object UltraVisualOcr {
         }
         val image = InputImage.fromBitmap(oriented, 0)
         return suspendCancellableCoroutine { continuation ->
-            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            val recognizer = recognizerFactory()
             val closed = AtomicBoolean(false)
             // A non-recursive, idempotent release callback; cancellation
             // and task completion may race, but ML Kit closes exactly once.
@@ -125,15 +133,15 @@ internal object UltraVisualOcr {
             }
             try {
                 recognizer.process(image)
-                    .addOnSuccessListener { result ->
+                    .addOnSuccessListener(callbackExecutor) { result ->
                         if (continuation.isActive) continuation.resume(result.text.take(1000))
                         releaseRecognizer()
                     }
-                    .addOnFailureListener { error ->
+                    .addOnFailureListener(callbackExecutor) { error ->
                         if (continuation.isActive) continuation.resumeWithException(error)
                         releaseRecognizer()
                     }
-                    .addOnCanceledListener {
+                    .addOnCanceledListener(callbackExecutor) {
                         if (continuation.isActive) continuation.cancel()
                         releaseRecognizer()
                     }
