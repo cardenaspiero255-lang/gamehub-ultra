@@ -19,6 +19,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,7 +39,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -66,6 +66,7 @@ internal fun UltraVoluntaryVisualCard(
     var textResult by remember { mutableStateOf("") }
     var notice by remember { mutableStateOf("") }
     var work by remember { mutableStateOf<Job?>(null) }
+    var operationRevision by remember { mutableLongStateOf(0L) }
     var readControl by remember { mutableStateOf<UltraVisualReadControl?>(null) }
     var resultEpoch by remember { mutableStateOf<Long?>(null) }
     var resultGame by remember { mutableStateOf<String?>(null) }
@@ -75,6 +76,9 @@ internal fun UltraVoluntaryVisualCard(
     var observedPrivacyRevision by remember { mutableStateOf(privacyRevision) }
 
     fun revoke() {
+        // Invalidate every previous asynchronous completion before cancelling
+        // it. Job object identity is not a reliable freshness token.
+        operationRevision++
         session.revoke()
         readControl?.revoke()
         readControl = null
@@ -247,6 +251,8 @@ internal fun UltraVoluntaryVisualCard(
                         } else {
                             val acceptedEpoch = approved.privacyEpoch
                             val acceptedGame = approved.gamePackage
+                            operationRevision++
+                            val operation = operationRevision
                             busy = true
                             notice = "Analizando solo en el dispositivo…"
                             val signal = CancellationSignal()
@@ -256,7 +262,6 @@ internal fun UltraVoluntaryVisualCard(
                             )
                             readControl = control
                             work = scope.launch {
-                                val currentWork = currentCoroutineContext()[Job]
                                 try {
                                     val extracted = withContext(Dispatchers.IO) {
                                         // An external erase can race the UI handoff;
@@ -294,7 +299,7 @@ internal fun UltraVoluntaryVisualCard(
                                     if (readControl === control) readControl = null
                                     // Revoked results are suppressed, but the matching job
                                     // must always release its busy state, even across epoch changes.
-                                    if (work === currentWork) {
+                                    if (operationRevision == operation) {
                                         work = null
                                         busy = false
                                         if (!UltraPrivacyEpoch.isCurrent(acceptedEpoch) ||
