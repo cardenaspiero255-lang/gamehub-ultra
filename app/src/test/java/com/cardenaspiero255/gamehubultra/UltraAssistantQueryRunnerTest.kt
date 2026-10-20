@@ -72,6 +72,69 @@ class UltraAssistantQueryRunnerTest {
     }
 
     @Test
+    fun externalEraseDuringSuspendedRoutingPreventsOCRFromReachingRemoteProvider() = runBlocking {
+        val original = UltraPrivacyEpoch.current()
+        val owner = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val routingStarted = CompletableDeferred<Unit>()
+        val resumeRouting = CompletableDeferred<Unit>()
+        var providerInvocations = 0
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = owner,
+                executionDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined,
+                currentGamePackage = { "game.a" },
+                currentConversation = { emptyList() },
+                publishConversation = {}
+            )
+            val submission = runner.launch(
+                expectedPrivacyEpoch = original,
+                onAccepted = {},
+                onFailure = { error("Cancelled private query must not send an error") }
+            ) {
+                routingStarted.complete(Unit)
+                resumeRouting.await() // Simulates an asynchronous agentRouter.route call.
+                runner.requireCurrentDispatch("game.a") // Before queryExecutor/aiAdvisor.
+                providerInvocations += 1
+            }
+            val accepted = assertIs<UltraAssistantQuerySubmission.Accepted>(submission)
+            routingStarted.await()
+            UltraPrivacyEpoch.invalidate()
+            resumeRouting.complete(Unit)
+            accepted.job.join()
+            assertEquals(0, providerInvocations)
+            assertFalse(runner.isRunning.value)
+        } finally { owner.cancel() }
+    }
+
+    @Test
+    fun consentStillCurrentAtProviderBoundaryAllowsApprovedRequest() = runBlocking {
+        val original = UltraPrivacyEpoch.current()
+        val owner = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var calls = 0
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = owner,
+                executionDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined,
+                currentGamePackage = { "game.a" },
+                currentConversation = { emptyList() },
+                publishConversation = {}
+            )
+            val response = runner.launch(
+                expectedPrivacyEpoch = original,
+                onAccepted = {},
+                onFailure = { error("No fallback expected") }
+            ) {
+                runner.requireCurrentDispatch("game.a")
+                calls += 1
+            }
+            assertIs<UltraAssistantQuerySubmission.Accepted>(response).job.join()
+            assertEquals(1, calls)
+        } finally { owner.cancel() }
+    }
+
+    @Test
     fun submittedQuerySurvivesVoiceCardScopeCancellation() = runBlocking {
         val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val cardScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
