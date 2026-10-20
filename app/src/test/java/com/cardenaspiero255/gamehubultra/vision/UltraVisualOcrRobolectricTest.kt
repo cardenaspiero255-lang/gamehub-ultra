@@ -215,6 +215,23 @@ class UltraVisualOcrRobolectricTest {
         Unit
     }
 
+    @Test fun largeAllowedImageIsDownsampledBeforeOCRToStayWithinMemoryBudget() = runBlocking {
+        // 2,600 x 1,200 = 3.12MP: the size is permitted by the input
+        // dimensions but would exceed the private OCR bitmap budget.
+        val uri = register(ImageProvider(png(width = 2600, height = 1200)))
+        var analyzedPixels = Long.MAX_VALUE
+        val text = UltraVisualOcr.readApprovedImage(
+            RuntimeEnvironment.getApplication(), uri,
+            UltraVisualReadControl(), CancellationSignal(),
+            recognizeOverride = { bitmap ->
+                analyzedPixels = bitmap.width.toLong() * bitmap.height
+                "OCR LOCAL"
+            }
+        )
+        assertEquals("OCR LOCAL", text)
+        assertTrue(analyzedPixels in 1..2_500_000L)
+    }
+
     @Test fun oversizedDecodedImageIsRejectedBeforeRecognition() = runBlocking {
         val uri = register(ImageProvider(png(width = 4097, height = 1)))
         assertFailsWith<IllegalArgumentException> {
