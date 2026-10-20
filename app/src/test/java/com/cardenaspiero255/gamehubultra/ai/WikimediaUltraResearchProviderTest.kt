@@ -1277,7 +1277,8 @@ class WikimediaUltraResearchProviderTest {
             String::class.java,
             String::class.java,
             Long::class.javaPrimitiveType,
-            Long::class.javaPrimitiveType
+            Long::class.javaPrimitiveType,
+            UltraGeneralQueryRequest::class.java
         )
         method.isAccessible = true
         return method.invoke(
@@ -1285,7 +1286,8 @@ class WikimediaUltraResearchProviderTest {
             topic,
             spanishTitle,
             deadlineNanos,
-            1_200L
+            1_200L,
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es un agujero negro?")
         ) as Boolean
     }
 
