@@ -11,6 +11,8 @@ import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
 import android.content.res.AssetFileDescriptor
 import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
+import java.util.zip.CRC32
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
@@ -72,6 +74,52 @@ class UltraVisualOcrRobolectricTest {
             bitmap.recycle()
             output.toByteArray()
         }
+    }
+
+    private fun pngWithExifOrientation(orientation: Int): ByteArray {
+        val original = png(3, 2)
+        // Standard PNG eXIf chunk: TIFF little-endian IFD0 Orientation 0x0112.
+        val tiff = byteArrayOf(
+            0x49, 0x49, 0x2a, 0, 8, 0, 0, 0,
+            1, 0, 0x12, 1, 3, 0, 1, 0, 0, 0,
+            orientation.toByte(), 0, 0, 0, 0, 0, 0, 0
+        )
+        val type = "eXIf".toByteArray(Charsets.US_ASCII)
+        val ihdrLength = java.nio.ByteBuffer.wrap(original, 8, 4).int
+        val insertAt = 8 + 12 + ihdrLength
+        val out = ByteArrayOutputStream()
+        out.write(original, 0, insertAt)
+        DataOutputStream(out).apply {
+            writeInt(tiff.size)
+            write(type)
+            write(tiff)
+            val crc = CRC32()
+            crc.update(type)
+            crc.update(tiff)
+            writeInt(crc.value.toInt())
+        }
+        out.write(original, insertAt, original.size - insertAt)
+        return out.toByteArray()
+    }
+
+    @Test fun pngEXIFOrientationIsHonoredBeforeLocalOCR() = runBlocking {
+        val uri = register(ImageProvider(pngWithExifOrientation(
+            ExifInterface.ORIENTATION_ROTATE_90
+        )))
+        var width = -1
+        var height = -1
+        val text = UltraVisualOcr.readApprovedImage(
+            RuntimeEnvironment.getApplication(), uri,
+            UltraVisualReadControl(), CancellationSignal(),
+            recognizeOverride = { image ->
+                width = image.width
+                height = image.height
+                "TEXTO LOCAL"
+            }
+        )
+        assertEquals("TEXTO LOCAL", text)
+        assertEquals(2, width)
+        assertEquals(3, height)
     }
 
     @Test fun EXIFRotation90NormalizesBitmapDimensionsAndCornerPixels() {
