@@ -91,24 +91,24 @@ class UltraVisualDraftRevocationRobolectricTest {
         }
         rule.onNodeWithTag("ultra-visual-use-text").performClick()
         rule.waitUntil(12000) {
-            rule.onAllNodesWithTag("ultra-chat-private-draft")
+            rule.onAllNodesWithTag("ultra-chat-private-draft", useUnmergedTree = true)
                 .fetchSemanticsNodes().isNotEmpty()
         }
-        rule.onNodeWithTag("ultra-chat-private-draft")
+        rule.onNodeWithTag("ultra-chat-private-draft", useUnmergedTree = true)
             .assertTextContains("Ayúdame a interpretar", substring = true)
     }
 
     @Test fun externalMemoryErasureRemovesVisualDraftFromParentChat() {
         mount()
         prepareVisualDraft()
-        rule.onNodeWithTag("ultra-chat-private-draft")
+        rule.onNodeWithTag("ultra-chat-private-draft", useUnmergedTree = true)
             .assertTextContains("Ayúdame a interpretar", substring = true)
         rule.runOnIdle { UltraPrivacyEpoch.invalidate() }
         rule.waitUntil(12000) {
-            rule.onAllNodesWithText("Ayúdame a interpretar", substring = true)
+            rule.onAllNodesWithText("Ayúdame a interpretar", substring = true, useUnmergedTree = true)
                 .fetchSemanticsNodes().isEmpty()
         }
-        rule.onNodeWithText("Ayúdame a interpretar", substring = true).assertDoesNotExist()
+        rule.onNodeWithText("Ayúdame a interpretar", substring = true, useUnmergedTree = true).assertDoesNotExist()
     }
 
     @Test fun gameSwitchRemovesVisualDraftBeforeItCanBeSentInOtherGame() {
@@ -116,9 +116,9 @@ class UltraVisualDraftRevocationRobolectricTest {
         prepareVisualDraft()
         rule.runOnIdle { game = "game.b" }
         rule.waitUntil(12000) {
-            rule.onAllNodesWithText("Ayúdame a interpretar", substring = true)
+            rule.onAllNodesWithText("Ayúdame a interpretar", substring = true, useUnmergedTree = true)
                 .fetchSemanticsNodes().isEmpty()
         }
-        rule.onNodeWithText("Ayúdame a interpretar", substring = true).assertDoesNotExist()
+        rule.onNodeWithText("Ayúdame a interpretar", substring = true, useUnmergedTree = true).assertDoesNotExist()
     }
 }
