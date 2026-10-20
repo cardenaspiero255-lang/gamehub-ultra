@@ -412,6 +412,7 @@ class UltraVerifiedResearchEngine(
 
         try {
             while (attempts.size < activeProviders.size) {
+                request.requireCurrentPrivacy()
                 val now = System.nanoTime()
                 val effectiveDeadline = minOf(
                     deadline,
@@ -432,10 +433,12 @@ class UltraVerifiedResearchEngine(
                     break
                 }
 
-                val completed = completion.poll(
-                    remaining,
-                    TimeUnit.NANOSECONDS
-                )
+                // With OCR consent, wake regularly to observe external erasure.
+                // Previously a single poll could block for the full 60 s.
+                val waitNanos = if (request.privacyEpoch == null) remaining
+                    else minOf(remaining, TimeUnit.MILLISECONDS.toNanos(50L))
+                val completed = completion.poll(waitNanos, TimeUnit.NANOSECONDS)
+                if (completed == null && waitNanos < remaining) continue
                 if (completed == null) {
                     if (
                         graceDeadlineNanos != null &&
@@ -502,6 +505,16 @@ class UltraVerifiedResearchEngine(
                     )
                 }
             }
+        } catch (cancelled: java.util.concurrent.CancellationException) {
+            submitted.forEachIndexed { index, future ->
+                if (!future.isDone) {
+                    providerWorkers[index].get()?.let { worker ->
+                        runCatching { activeProviders[index].cancelActiveRequest(worker) }
+                    }
+                    future.cancel(true)
+                }
+            }
+            throw cancelled
         } catch (interrupted: InterruptedException) {
             submitted.forEachIndexed { index, future ->
                 if (!future.isDone) {
@@ -517,6 +530,7 @@ class UltraVerifiedResearchEngine(
             throw interrupted
         }
 
+        request.requireCurrentPrivacy()
         if (timedOut || stoppedAfterGrace) {
             submitted.forEachIndexed { index, future ->
                 if (!future.isDone) {
@@ -616,7 +630,8 @@ class UltraVerifiedResearchEngine(
             )
 
             val allProvidersSettled = attempts.size >= activeProviders.size
-            if (allProvidersSettled) {
+            request.requireCurrentPrivacy()
+            if (allProvidersSettled && request.privacyEpoch == null) {
                 cache.put(
                     key = key,
                     result = result,
