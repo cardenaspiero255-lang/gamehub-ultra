@@ -150,12 +150,9 @@ internal object UltraVisualOcr {
             value.indices.all { i -> data[offset + i] == value[i].code.toByte() }
 
     private fun exifOrientation(data: ByteArray): Int {
-        // PNG, GIF, BMP and WebP are handled by their decoded pixel orientation.
-        // ExifInterface can parse EXIF for JPEG and ISO BMFF HEIF/AVIF.
-        val jpeg = data.size >= 3 && data[0] == 0xff.toByte() &&
-            data[1] == 0xd8.toByte() && data[2] == 0xff.toByte()
-        val isoBmff = matchesAsciiAt(data, 4, "ftyp")
-        if (!jpeg && !isoBmff) return ExifInterface.ORIENTATION_NORMAL
+        // Android ExifInterface reads orientation from JPEG, HEIF/AVIF,
+        // PNG eXIf and WebP EXIF chunks. Do not assume decoded PNG/WebP pixels
+        // are upright; the entire stream is already bounded to 8 MiB.
         return runCatching {
             ByteArrayInputStream(data).use { input ->
                 ExifInterface(input).getAttributeInt(
