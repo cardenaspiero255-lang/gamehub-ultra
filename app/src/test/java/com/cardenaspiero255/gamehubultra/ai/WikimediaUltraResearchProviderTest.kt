@@ -14,6 +14,28 @@ import kotlin.test.assertTrue
 class WikimediaUltraResearchProviderTest {
 
     @Test
+    fun revokedOcrAfterWikimediaSearchNeverStartsTheExtractHttpRequest() {
+        val epoch = com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.current()
+        var httpCalls = 0
+        val provider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                httpCalls++
+                com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.invalidate()
+                UltraResearchHttpResponse(
+                    200, """{"query":{"search":[{"title":"Motor"}]}}"""
+                )
+            }
+        )
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, ¿qué es un motor?"
+        ).copy(privacyEpoch = epoch)
+        assertFailsWith<java.util.concurrent.CancellationException> {
+            provider.fetchResult(request)
+        }
+        assertEquals(1, httpCalls, "An erasure must block Wikimedia extract/translation requests")
+    }
+
+    @Test
     fun stableDefinitionSurvivesSupabaseIndependentlyThroughWikimedia() {
         val transport = scriptedTransport(
             searchBody = """
