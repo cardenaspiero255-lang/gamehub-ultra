@@ -185,7 +185,11 @@ internal fun UltraVoluntaryVisualCard(
         if (notice.isNotBlank()) {
             Text(notice, style = MaterialTheme.typography.bodySmall)
         }
-        if (textResult.isNotBlank() && resultEpoch == UltraPrivacyEpoch.current() &&
+        // Render the approved result only after the worker has completed its
+        // cleanup. Otherwise Compose can expose a disabled button while the
+        // text is visible and a rapid user's tap is silently dropped.
+        if (textResult.isNotBlank() && !busy &&
+            resultEpoch == UltraPrivacyEpoch.current() &&
             resultGame == gamePackage
         ) {
             Text(textResult, style = MaterialTheme.typography.bodySmall)
