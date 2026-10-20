@@ -270,10 +270,41 @@ class UltraVisualOcrRobolectricTest {
         // Use a genuine tightly compressed PNG so this test isolates the
         // decoded-pixel budget instead of correctly tripping the byte budget.
         val compactPng = ByteArrayOutputStream().use { output ->
-            val image = java.awt.image.BufferedImage(
-                2600, 1200, java.awt.image.BufferedImage.TYPE_INT_ARGB
-            )
-            check(javax.imageio.ImageIO.write(image, "png", output))
+            // Produce an actual compressed RGBA PNG without java.awt/javax.imageio:
+            // Android JVM test compilation does not expose desktop Java AWT APIs.
+            val width = 2600
+            val height = 1200
+            val scanlines = ByteArray((width * 4 + 1) * height)
+            val compressed = ByteArrayOutputStream().use { buffer ->
+                java.util.zip.DeflaterOutputStream(buffer).use { it.write(scanlines) }
+                buffer.toByteArray()
+            }
+            fun chunk(kind: String, bytes: ByteArray) {
+                val kindBytes = kind.toByteArray(Charsets.US_ASCII)
+                val crc = CRC32().apply { update(kindBytes); update(bytes) }
+                DataOutputStream(output).apply {
+                    writeInt(bytes.size)
+                    write(kindBytes)
+                    write(bytes)
+                    writeInt(crc.value.toInt())
+                }
+            }
+            val header = ByteArrayOutputStream().use { buffer ->
+                DataOutputStream(buffer).use { data ->
+                    data.writeInt(width)
+                    data.writeInt(height)
+                    data.writeByte(8) // Bit depth
+                    data.writeByte(6) // RGBA
+                    data.writeByte(0) // Compression
+                    data.writeByte(0) // Filter
+                    data.writeByte(0) // Interlace
+                }
+                buffer.toByteArray()
+            }
+            output.write(byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10))
+            chunk("IHDR", header)
+            chunk("IDAT", compressed)
+            chunk("IEND", byteArrayOf())
             output.toByteArray()
         }
         assertTrue(compactPng.size < 8 * 1024 * 1024)
