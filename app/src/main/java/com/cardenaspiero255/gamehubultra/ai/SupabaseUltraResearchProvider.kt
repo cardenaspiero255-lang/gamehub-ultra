@@ -129,6 +129,7 @@ class SupabaseUltraResearchProvider(
     override fun fetchResult(
         request: UltraGeneralQueryRequest
     ): UltraProviderResult {
+        request.requireCurrentPrivacy()
         if (supabaseUrl.isBlank() || publishableKey.isBlank()) {
             return UltraProviderResult.Failure(
                 reasonCode = "BACKEND_NOT_CONFIGURED",
@@ -139,12 +140,19 @@ class SupabaseUltraResearchProvider(
 
         val endpoint = supabaseUrl.trimEnd('/') + "/functions/v1/ultra-research"
         val httpResponse = try {
-            transport.postResponse(
+            val requestBody = UltraResearchJsonCodec.encodeRequest(request)
+            // Encoding can take time: recheck just before the HTTP POST.
+            request.requireCurrentPrivacy()
+            val result = transport.postResponse(
                 endpoint = endpoint,
                 apiKey = publishableKey,
-                body = UltraResearchJsonCodec.encodeRequest(request),
+                body = requestBody,
                 timeoutMillis = request.timeoutMillis
             )
+            request.requireCurrentPrivacy()
+            result
+        } catch (cancelled: java.util.concurrent.CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             return UltraProviderResult.Failure(
                 reasonCode = "BACKEND_NETWORK_FAILURE",
