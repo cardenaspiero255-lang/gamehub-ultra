@@ -90,9 +90,22 @@ class UltraVisualDraftRevocationRobolectricTest {
             rule.onAllNodesWithText("ULTRA TEXTO PRIVADO").fetchSemanticsNodes().isNotEmpty()
         }
         rule.onNodeWithTag("ultra-visual-use-text").performClick()
-        rule.waitUntil(12000) {
-            rule.onAllNodesWithTag("ultra-chat-private-draft", useUnmergedTree = true)
-                .fetchSemanticsNodes().isNotEmpty()
+        try {
+            rule.waitUntil(12000) {
+                rule.onAllNodesWithTag("ultra-chat-private-draft", useUnmergedTree = true)
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+        } catch (timeout: androidx.compose.ui.test.ComposeTimeoutException) {
+            // Preserve the failure and capture the synthetic UI tree to diagnose
+            // whether the parent handoff is rejected or the dialog is dismissed.
+            val visibleTree = runCatching {
+                rule.onRoot(useUnmergedTree = true).printToString(maxDepth = 12)
+            }.getOrElse { "UI tree unavailable: ${it.javaClass.simpleName}" }
+            throw AssertionError(
+                "Visual OCR draft did not reach parent chat; privacy epoch=" +
+                    UltraPrivacyEpoch.current() + "; unmerged UI tree:\n" + visibleTree,
+                timeout
+            )
         }
         rule.onNodeWithTag("ultra-chat-private-draft", useUnmergedTree = true)
             .assertTextContains("Ayúdame a interpretar", substring = true)
