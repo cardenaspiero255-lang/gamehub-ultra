@@ -249,8 +249,16 @@ internal fun VoiceAssistantCard(
 
                 is UltraAgentRoute.Chat -> {
                     queryRunner.requireCurrentDispatch(originatingGamePackage)
+                    // The research engine may spawn provider workers and retry.
+                    // Carry the original epoch through request.copy() so those
+                    // workers can recheck it at each provider attempt.
+                    val consentBoundRoute = if (draftOriginAtSend == null) route else {
+                        route.copy(query = route.query?.copy(
+                            privacyEpoch = draftOriginAtSend.privacyEpoch
+                        ))
+                    }
                     val answer = queryExecutor.answer(
-                        route = route,
+                        route = consentBoundRoute,
                         stableKnowledgeFallback = {
                             queryRunner.requireCurrentDispatch(originatingGamePackage)
                             aiAdvisor.generalKnowledgeChatOrNull(
