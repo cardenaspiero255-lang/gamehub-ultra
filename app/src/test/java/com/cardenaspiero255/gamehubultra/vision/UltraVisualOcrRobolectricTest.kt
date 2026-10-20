@@ -1,6 +1,12 @@
 package com.cardenaspiero255.gamehubultra.vision
 
 import android.content.ContentProvider
+import com.google.android.gms.tasks.Tasks
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
+import com.google.mlkit.vision.text.TextRecognizer
+import org.mockito.Mockito
+import java.util.concurrent.CancellationException
 import android.content.ContentValues
 import android.content.pm.ProviderInfo
 import android.database.Cursor
@@ -320,6 +326,72 @@ class UltraVisualOcrRobolectricTest {
         )
         assertEquals("OCR LOCAL", text)
         assertTrue(analyzedPixels in 1..2_500_000L)
+    }
+
+
+    private fun fakeRecognizer(task: com.google.android.gms.tasks.Task<Text>): TextRecognizer {
+        val client = Mockito.mock(TextRecognizer::class.java)
+        Mockito.`when`(client.process(Mockito.any(InputImage::class.java))).thenReturn(task)
+        return client
+    }
+
+    @Test fun mlKitSuccessCapsOutputAndClosesRecognizerExactlyOnce() = runBlocking {
+        val recognition = Mockito.mock(Text::class.java)
+        Mockito.`when`(recognition.text).thenReturn("A".repeat(1100))
+        val client = fakeRecognizer(Tasks.forResult(recognition))
+        val uri = register(ImageProvider(png()))
+        val text = UltraVisualOcr.readApprovedImage(
+            RuntimeEnvironment.getApplication(), uri,
+            UltraVisualReadControl(), CancellationSignal(),
+            recognizerFactory = { client }
+        )
+        assertEquals("A".repeat(1000), text)
+        Mockito.verify(client, Mockito.times(1)).close()
+    }
+
+    @Test fun mlKitAsyncFailurePropagatesAndClosesRecognizerExactlyOnce() = runBlocking {
+        val client = fakeRecognizer(
+            Tasks.forException<Text>(IllegalStateException("OCR inference failed"))
+        )
+        val uri = register(ImageProvider(png()))
+        assertFailsWith<IllegalStateException> {
+            UltraVisualOcr.readApprovedImage(
+                RuntimeEnvironment.getApplication(), uri,
+                UltraVisualReadControl(), CancellationSignal(),
+                recognizerFactory = { client }
+            )
+        }
+        Mockito.verify(client, Mockito.times(1)).close()
+    }
+
+    @Test fun mlKitCancelledTaskRevokesConsentAndClosesRecognizerExactlyOnce() = runBlocking {
+        val client = fakeRecognizer(Tasks.forCanceled<Text>())
+        val control = UltraVisualReadControl()
+        val uri = register(ImageProvider(png()))
+        assertFailsWith<CancellationException> {
+            UltraVisualOcr.readApprovedImage(
+                RuntimeEnvironment.getApplication(), uri,
+                control, CancellationSignal(),
+                recognizerFactory = { client }
+            )
+        }
+        assertFailsWith<CancellationException> { control.ensureActive() }
+        Mockito.verify(client, Mockito.times(1)).close()
+    }
+
+    @Test fun mlKitSynchronousFailureAlsoClosesRecognizerExactlyOnce() = runBlocking {
+        val client = Mockito.mock(TextRecognizer::class.java)
+        Mockito.`when`(client.process(Mockito.any(InputImage::class.java)))
+            .thenThrow(IllegalArgumentException("Synchronous OCR failure"))
+        val uri = register(ImageProvider(png()))
+        assertFailsWith<IllegalArgumentException> {
+            UltraVisualOcr.readApprovedImage(
+                RuntimeEnvironment.getApplication(), uri,
+                UltraVisualReadControl(), CancellationSignal(),
+                recognizerFactory = { client }
+            )
+        }
+        Mockito.verify(client, Mockito.times(1)).close()
     }
 
     @Test fun oversizedDecodedImageIsRejectedBeforeRecognition() = runBlocking {
