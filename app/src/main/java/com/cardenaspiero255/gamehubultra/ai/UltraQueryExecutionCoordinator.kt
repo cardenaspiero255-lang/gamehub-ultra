@@ -51,6 +51,7 @@ class UltraQueryExecutionCoordinator(
         request: UltraGeneralQueryRequest,
         localChat: () -> String?
     ): UltraQueryExecutionAnswer {
+        request.requireCurrentPrivacy()
         val mandatoryResearch =
             request.requiresFreshData ||
                 request.requiresInternet ||
@@ -130,7 +131,10 @@ class UltraQueryExecutionCoordinator(
         request: UltraGeneralQueryRequest
     ): UltraQueryExecutionAnswer =
         try {
-            toExecutionAnswer(researchGateway.answer(request))
+            request.requireCurrentPrivacy()
+            val result = researchGateway.answer(request)
+            request.requireCurrentPrivacy()
+            toExecutionAnswer(result)
         } catch (cancelled: java.util.concurrent.CancellationException) {
             throw cancelled
         } catch (_: Exception) {
