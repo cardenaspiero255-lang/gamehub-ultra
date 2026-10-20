@@ -8,6 +8,35 @@ import kotlin.test.assertTrue
 
 class UltraVerifiedResearchEngineTest {
     @Test
+    fun revokingOCRDuringProviderFailurePreventsRetryingItsPrivateText() {
+        val originalEpoch = com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.current()
+        val providerCalls = AtomicInteger()
+        val provider = object : UltraResearchProvider {
+            override val id = "private-ocr-research"
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                error("The failure path must use fetchResult")
+            override fun fetchResult(request: UltraGeneralQueryRequest): UltraProviderResult {
+                providerCalls.incrementAndGet()
+                com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.invalidate()
+                return UltraProviderResult.Failure(
+                    reasonCode = "TRANSIENT", retryable = true
+                )
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
+        try {
+            val request = UltraGeneralQueryRouter.classify("noticias de Android hoy")
+                .copy(privacyEpoch = originalEpoch)
+            kotlin.test.assertFailsWith<java.util.concurrent.CancellationException> {
+                engine.answer(request)
+            }
+            assertEquals(1, providerCalls.get(), "No second provider attempt after OCR revocation")
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun slowProviderIsCutOffByRequestTimeout() {
         val provider = object : UltraResearchProvider {
             override val id = "slow"
