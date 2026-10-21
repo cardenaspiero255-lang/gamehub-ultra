@@ -33,6 +33,19 @@ interface UltraResearchBackendTransport {
             )
         )
 
+    // Backward-compatible for injected transports; the real transport fences
+    // again after registering its cancellable socket and before sending text.
+    fun postResponse(
+        endpoint: String,
+        apiKey: String,
+        body: String,
+        timeoutMillis: Long,
+        privacyCheck: () -> Unit
+    ): UltraResearchHttpResponse {
+        privacyCheck()
+        return postResponse(endpoint, apiKey, body, timeoutMillis)
+    }
+
     fun cancelRequest(worker: Thread) = Unit
 }
 
@@ -63,21 +76,48 @@ object HttpUrlConnectionUltraResearchTransport : UltraResearchBackendTransport {
         apiKey: String,
         body: String,
         timeoutMillis: Long
-    ): UltraResearchHttpResponse {
-        val connection = URL(endpoint).openConnection() as HttpURLConnection
-        val worker = Thread.currentThread()
-        activeConnections[worker] = connection
-        val safeTimeout = timeoutMillis.coerceIn(1_000L, 60_000L).toInt()
-        connection.requestMethod = "POST"
-        connection.connectTimeout = safeTimeout
-        connection.readTimeout = safeTimeout
-        connection.doOutput = true
-        connection.setRequestProperty("Content-Type", "application/json")
-        connection.setRequestProperty("apikey", apiKey)
-        connection.setRequestProperty("Accept", "application/json")
+    ): UltraResearchHttpResponse =
+        postResponse(endpoint, apiKey, body, timeoutMillis) {}
 
+    override fun postResponse(
+        endpoint: String,
+        apiKey: String,
+        body: String,
+        timeoutMillis: Long,
+        privacyCheck: () -> Unit
+    ): UltraResearchHttpResponse {
+        val worker = Thread.currentThread()
+        if (worker.isInterrupted) {
+            throw java.util.concurrent.CancellationException("Research worker cancelled")
+        }
+        val connection = URL(endpoint).openConnection() as HttpURLConnection
+        activeConnections[worker] = connection
         return try {
+            // Covers cancellation before registration and privacy revocation
+            // during URL.openConnection() or before the first network byte.
+            privacyCheck()
+            if (worker.isInterrupted) {
+                throw java.util.concurrent.CancellationException("Research worker cancelled")
+            }
+            val safeTimeout = timeoutMillis.coerceIn(1_000L, 60_000L).toInt()
+            connection.requestMethod = "POST"
+            connection.connectTimeout = safeTimeout
+            connection.readTimeout = safeTimeout
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("apikey", apiKey)
+            connection.setRequestProperty("Accept", "application/json")
+
+            privacyCheck()
+            if (worker.isInterrupted) {
+                throw java.util.concurrent.CancellationException("Research worker cancelled")
+            }
             connection.outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
+                // outputStream may establish a socket; guard actual body write.
+                privacyCheck()
+                if (worker.isInterrupted) {
+                    throw java.util.concurrent.CancellationException("Research worker cancelled")
+                }
                 writer.write(body)
             }
             val status = connection.responseCode
@@ -101,6 +141,7 @@ object HttpUrlConnectionUltraResearchTransport : UltraResearchBackendTransport {
 
     override fun cancelRequest(worker: Thread) {
         activeConnections.remove(worker)?.disconnect()
+        worker.interrupt()
     }
 }
 
@@ -147,7 +188,8 @@ class SupabaseUltraResearchProvider(
                 endpoint = endpoint,
                 apiKey = publishableKey,
                 body = requestBody,
-                timeoutMillis = request.timeoutMillis
+                timeoutMillis = request.timeoutMillis,
+                privacyCheck = { request.requireCurrentPrivacy() }
             )
             request.requireCurrentPrivacy()
             result
