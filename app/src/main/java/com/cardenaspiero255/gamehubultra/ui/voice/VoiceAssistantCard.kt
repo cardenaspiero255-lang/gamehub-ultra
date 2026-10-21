@@ -257,6 +257,9 @@ internal fun VoiceAssistantCard(
                             privacyEpoch = draftOriginAtSend.privacyEpoch
                         ))
                     }
+                    // Device status and route construction can suspend or race erasure:
+                    // fence once more at the actual remote/provider dispatch boundary.
+                    queryRunner.requireCurrentDispatch(originatingGamePackage)
                     val answer = queryExecutor.answer(
                         route = consentBoundRoute,
                         stableKnowledgeFallback = {
