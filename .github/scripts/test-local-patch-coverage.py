@@ -138,7 +138,7 @@ RuntimeObject
             '<report><package name="com/example"><sourcefile name="Foo.kt">'
             '<line nr="1" mi="0" ci="2"/></sourcefile></package></report>'
         )
-        source = "val route = dispatch()\\n    ))\\n"
+        source = "val route = dispatch()\n    ))\n"
         stats = gate.calculate_patch_line_coverage(
             report,
             {"app/src/main/java/com/example/Foo.kt": {1, 2}},
@@ -153,7 +153,7 @@ RuntimeObject
             '<report><package name="com/example"><sourcefile name="Foo.kt">'
             '<line nr="1" mi="0" ci="2"/></sourcefile></package></report>'
         )
-        source = "val route = dispatch()\\n    readControl?.revoke()\\n"
+        source = "val route = dispatch()\n    readControl?.revoke()\n"
         stats = gate.calculate_patch_line_coverage(
             report,
             {"app/src/main/java/com/example/Foo.kt": {1, 2}},
