@@ -10457,12 +10457,17 @@ Deno.test(
         if (url.hostname === "es.wikipedia.org") {
           if (url.searchParams.get("generator") === "search") {
             return jsonResponse({
-              query: { pages: { "1": {
-                title: "Shakira",
-                extract: "Shakira: nombre femenino de origen árabe.",
-                index: 1,
-                canonicalurl: "https://es.wikipedia.org/wiki/Shakira_(nombre)",
-              } } },
+              query: {
+                pages: {
+                  "1": {
+                    title: "Shakira",
+                    extract: "Shakira: nombre femenino de origen árabe.",
+                    index: 1,
+                    canonicalurl:
+                      "https://es.wikipedia.org/wiki/Shakira_(nombre)",
+                  },
+                },
+              },
             });
           }
           return jsonResponse({ query: { search: [] } });
@@ -10471,17 +10476,30 @@ Deno.test(
           wikidataCalls++;
           return jsonResponse({
             search: [
-              { id: "Q9999999", label: "Shakira", description: "nombre femenino de origen árabe" },
-              { id: "Q34424", label: "Shakira", description: "cantante y compositora colombiana" },
+              {
+                id: "Q9999999",
+                label: "Shakira",
+                description: "nombre femenino de origen árabe",
+              },
+              {
+                id: "Q34424",
+                label: "Shakira",
+                description: "cantante y compositora colombiana",
+              },
             ],
           });
         }
         throw new Error("Unexpected provider " + url);
       },
-      env: (key) => key === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE" ? "1" : undefined,
+      env: (key) =>
+        key === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE" ? "1" : undefined,
     };
     const result = await routeResearchQuery(
-      "¿Quién es Shakira?", deps, "", "GENERAL_KNOWLEDGE", "REQUIRED",
+      "¿Quién es Shakira?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+      "REQUIRED",
     );
     if (
       result.abstained || wikidataCalls === 0 ||
@@ -10489,9 +10507,10 @@ Deno.test(
       !result.displayText?.toLowerCase().includes("colombiana") ||
       result.displayText?.includes("nombre femenino")
     ) {
-      throw new Error("Single-token person identity must not be answered as name etymology: " +
-        JSON.stringify(result));
+      throw new Error(
+        "Single-token person identity must not be answered as name etymology: " +
+          JSON.stringify(result),
+      );
     }
   },
 );
-
