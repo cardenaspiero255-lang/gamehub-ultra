@@ -5365,7 +5365,12 @@ function candidateMatchesKnownMeaning(
     const nameTokens = namedEntity.split(/\s+/).filter(Boolean);
     if (nameTokens.length >= 1 && nameTokens.length <= 6) {
       const subjectTitle = candidateTitle.replace(/\s*\([^)]*\)$/, "").trim();
-      if (subjectTitle !== namedEntity) return false;
+      // Single-token creator handles may be written as spaced article titles
+      // (ElRubius -> El Rubius). This equivalence is not a fuzzy match.
+      const exactIdentity = subjectTitle === namedEntity ||
+        (nameTokens.length === 1 &&
+          subjectTitle.replace(/\s+/g, "") === namedEntity.replace(/\s+/g, ""));
+      if (!exactIdentity) return false;
       const subjectQualifier = candidateTitle.slice(subjectTitle.length);
       if (/\b(?:episodio|pelicula|serie|cancion|videojuego|personaje|nombre|etimologia)\b/.test(subjectQualifier)) {
         return false;
