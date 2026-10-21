@@ -5363,11 +5363,20 @@ function candidateMatchesKnownMeaning(
     const namedEntity = normalize(extractGeneralKnowledgeQuery(query))
       .replace(/^(?:el|la|los|las)\s+/, "");
     const nameTokens = namedEntity.split(/\s+/).filter(Boolean);
-    if (nameTokens.length >= 2 && nameTokens.length <= 6) {
+    if (nameTokens.length >= 1 && nameTokens.length <= 6) {
       const subjectTitle = candidateTitle.replace(/\s*\([^)]*\)$/, "").trim();
       if (subjectTitle !== namedEntity) return false;
       const subjectQualifier = candidateTitle.slice(subjectTitle.length);
-      if (/\b(?:episodio|pelicula|serie|cancion|videojuego|personaje)\b/.test(subjectQualifier)) {
+      if (/\b(?:episodio|pelicula|serie|cancion|videojuego|personaje|nombre|etimologia)\b/.test(subjectQualifier)) {
+        return false;
+      }
+      // A name can also identify an etymology article or a Wikidata given-name
+      // entry with exactly the same label. Neither is biographical evidence.
+      const normalizedIntro = normalize(extract).slice(0, 180);
+      const withoutName = normalizedIntro.startsWith(namedEntity)
+        ? normalizedIntro.slice(namedEntity.length).replace(/^[\s:,.\-]+/, "")
+        : normalizedIntro;
+      if (/^(?:(?:es|era|fue)\s+)?(?:(?:un|una|el|la)\s+)?(?:nombre\b|antroponimo\b|etimologia\b)/.test(withoutName)) {
         return false;
       }
     }
