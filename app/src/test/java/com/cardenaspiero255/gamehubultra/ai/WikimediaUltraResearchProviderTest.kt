@@ -14,6 +14,26 @@ import kotlin.test.assertTrue
 class WikimediaUltraResearchProviderTest {
 
     @Test
+    fun revokingOcrAfterConnectionRegistrationPreventsWikimediaSocketRequest() {
+        val epoch = com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.current()
+        val request = UltraGeneralQueryRouter.classify("¿Qué es un espectrómetro?")
+            .copy(privacyEpoch = epoch)
+        var checked = false
+        assertFailsWith<java.util.concurrent.CancellationException> {
+            HttpUrlConnectionUltraPublicKnowledgeTransport.get(
+                url = "http://127.0.0.1:1/w/api.php",
+                timeoutMillis = 1_000L,
+                privacyCheck = {
+                    checked = true
+                    com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.invalidate()
+                    request.requireCurrentPrivacy()
+                }
+            )
+        }
+        assertTrue(checked, "Every real Wikimedia socket requires a current OCR epoch")
+    }
+
+    @Test
     fun revokedOcrAfterWikimediaSearchNeverStartsTheExtractHttpRequest() {
         val epoch = com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.current()
         var httpCalls = 0
