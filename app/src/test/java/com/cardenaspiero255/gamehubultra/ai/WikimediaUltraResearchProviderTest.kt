@@ -20,7 +20,7 @@ class WikimediaUltraResearchProviderTest {
             .copy(privacyEpoch = epoch)
         var checked = false
         assertFailsWith<java.util.concurrent.CancellationException> {
-            HttpUrlConnectionUltraPublicKnowledgeTransport.get(
+            HttpUrlConnectionUltraPublicKnowledgeTransport.getGuardedResponse(
                 url = "http://127.0.0.1:1/w/api.php",
                 timeoutMillis = 1_000L,
                 privacyCheck = {
