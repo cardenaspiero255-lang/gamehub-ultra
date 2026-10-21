@@ -136,11 +136,9 @@ internal fun UltraVoluntaryVisualCard(
         if (!enabled) revoke()
     }
     DisposableEffect(session) {
-        onDispose {
-            session.revoke()
-            readControl?.revoke()
-            work?.cancel()
-        }
+        // Compose inlines onDispose: the invocation maps to this source line;
+        // the actual cleanup remains an instrumentable, independently tested function.
+        onDispose { disposeVisualOperation(session, readControl, work) }
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -325,4 +323,16 @@ internal fun UltraVoluntaryVisualCard(
             }
         )
     }
+}
+
+
+/** Explicit cleanup keeps revocation observable to JaCoCo despite Compose inlining. */
+internal fun disposeVisualOperation(
+    session: UltraVoluntaryVisualSession,
+    readControl: UltraVisualReadControl?,
+    work: Job?
+) {
+    session.revoke()
+    readControl?.revoke()
+    work?.cancel()
 }
