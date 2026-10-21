@@ -15,7 +15,7 @@ fun interface UltraPublicKnowledgeTransport {
         timeoutMillis: Long
     ): UltraResearchHttpResponse
 
-    fun get(
+    fun getGuardedResponse(
         url: String,
         timeoutMillis: Long,
         privacyCheck: () -> Unit
@@ -32,9 +32,16 @@ object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTran
         ConcurrentHashMap<Thread, HttpURLConnection>()
 
     override fun get(url: String, timeoutMillis: Long): UltraResearchHttpResponse =
-        get(url, timeoutMillis) {}
+        performGet(url, timeoutMillis) {}
 
-    override fun get(
+    override fun getGuardedResponse(
+        url: String,
+        timeoutMillis: Long,
+        privacyCheck: () -> Unit
+    ): UltraResearchHttpResponse =
+        performGet(url, timeoutMillis, privacyCheck)
+
+    private fun performGet(
         url: String,
         timeoutMillis: Long,
         privacyCheck: () -> Unit
@@ -365,7 +372,7 @@ class WikimediaUltraResearchProvider(
     ): TransportOutcome {
         request.requireCurrentPrivacy()
         return try {
-            val response = transport.get(url, timeoutMillis) {
+            val response = transport.getGuardedResponse(url, timeoutMillis) {
                 request.requireCurrentPrivacy()
             }
             request.requireCurrentPrivacy()
