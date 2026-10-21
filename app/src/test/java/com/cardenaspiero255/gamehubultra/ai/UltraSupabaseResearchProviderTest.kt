@@ -502,4 +502,40 @@ class UltraSupabaseResearchProviderTest {
     }
 
 
+    @Test
+    fun privateOCRRequestMarksRemoteProtocolAsNoStore() {
+        val originalEpoch = com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.current()
+        val privateRequest = UltraGeneralQueryRouter.classify("¿Qué es un espectrómetro?")
+            .copy(privacyEpoch = originalEpoch)
+        val privateJson = UltraResearchJsonCodec.encodeRequest(privateRequest)
+        val normalJson = UltraResearchJsonCodec.encodeRequest(
+            privateRequest.copy(privacyEpoch = null)
+        )
+        assertTrue(privateJson.contains("\"noStore\":true"), "OCR must disable remote caching")
+        assertTrue(normalJson.contains("\"noStore\":false"), "Ordinary queries retain cache policy")
+        assertTrue(!privateJson.contains("\"privacyEpoch\""), "Never send epoch value to server")
+    }
+
+    @Test
+    fun revokedOCRBeforeRegisteredHttpTransportDispatchCannotOpenSocket() {
+        val epoch = com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.current()
+        val request = UltraGeneralQueryRouter.classify("¿Qué es la luz?")
+            .copy(privacyEpoch = epoch)
+        var checked = false
+        kotlin.test.assertFailsWith<java.util.concurrent.CancellationException> {
+            HttpUrlConnectionUltraResearchTransport.postResponse(
+                endpoint = "http://127.0.0.1:1/test",
+                apiKey = "test",
+                body = UltraResearchJsonCodec.encodeRequest(request),
+                timeoutMillis = 1_000L,
+                privacyCheck = {
+                    checked = true
+                    com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.invalidate()
+                    request.requireCurrentPrivacy()
+                }
+            )
+        }
+        assertTrue(checked, "The real connection must fence the privacy epoch before network I/O")
+    }
+
 }
