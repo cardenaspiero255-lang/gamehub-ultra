@@ -132,6 +132,35 @@ RuntimeObject
         self.assertEqual(stats.unmapped_files, ())
 
 
+
+    def test_nested_kotlin_call_closures_are_structural_not_missing_instrumentation(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="2"/></sourcefile></package></report>'
+        )
+        source = "val route = dispatch()\n    ))\n"
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": {1, 2}},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.unmapped_files, ())
+        self.assertEqual(stats.executable, 1)
+        self.assertEqual(stats.covered, 1)
+
+    def test_missing_executable_cleanup_remains_a_hard_failure(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="2"/></sourcefile></package></report>'
+        )
+        source = "val route = dispatch()\n    readControl?.revoke()\n"
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": {1, 2}},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.unmapped_files, ("app/src/main/java/com/example/Foo.kt:2",))
+
     def test_bare_kotlin_when_else_arrow_is_not_executable(self) -> None:
         report = ET.fromstring(
             '<report><package name="com/example"><sourcefile name="Foo.kt">'

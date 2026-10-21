@@ -14,6 +14,48 @@ import kotlin.test.assertTrue
 class WikimediaUltraResearchProviderTest {
 
     @Test
+    fun revokingOcrAfterConnectionRegistrationPreventsWikimediaSocketRequest() {
+        val epoch = com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.current()
+        val request = UltraGeneralQueryRouter.classify("¿Qué es un espectrómetro?")
+            .copy(privacyEpoch = epoch)
+        var checked = false
+        assertFailsWith<java.util.concurrent.CancellationException> {
+            HttpUrlConnectionUltraPublicKnowledgeTransport.getGuardedResponse(
+                url = "http://127.0.0.1:1/w/api.php",
+                timeoutMillis = 1_000L,
+                privacyCheck = {
+                    checked = true
+                    com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.invalidate()
+                    request.requireCurrentPrivacy()
+                }
+            )
+        }
+        assertTrue(checked, "Every real Wikimedia socket requires a current OCR epoch")
+    }
+
+    @Test
+    fun revokedOcrAfterWikimediaSearchNeverStartsTheExtractHttpRequest() {
+        val epoch = com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.current()
+        var httpCalls = 0
+        val provider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                httpCalls++
+                com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.invalidate()
+                UltraResearchHttpResponse(
+                    200, """{"query":{"search":[{"title":"Motor"}]}}"""
+                )
+            }
+        )
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, ¿qué es un motor?"
+        ).copy(privacyEpoch = epoch)
+        assertFailsWith<java.util.concurrent.CancellationException> {
+            provider.fetchResult(request)
+        }
+        assertEquals(1, httpCalls, "An erasure must block Wikimedia extract/translation requests")
+    }
+
+    @Test
     fun stableDefinitionSurvivesSupabaseIndependentlyThroughWikimedia() {
         val transport = scriptedTransport(
             searchBody = """
@@ -1255,7 +1297,8 @@ class WikimediaUltraResearchProviderTest {
             String::class.java,
             String::class.java,
             Long::class.javaPrimitiveType,
-            Long::class.javaPrimitiveType
+            Long::class.javaPrimitiveType,
+            UltraGeneralQueryRequest::class.java
         )
         method.isAccessible = true
         return method.invoke(
@@ -1263,7 +1306,8 @@ class WikimediaUltraResearchProviderTest {
             topic,
             spanishTitle,
             deadlineNanos,
-            1_200L
+            1_200L,
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es un agujero negro?")
         ) as Boolean
     }
 

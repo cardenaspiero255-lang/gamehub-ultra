@@ -12,6 +12,8 @@ type ResearchRequest = {
   kind?: string;
   verificationMode?: string;
   requiresFreshData?: boolean;
+  // Private visual OCR requests must never populate the shared backend cache.
+  noStore?: boolean;
   correlationId?: string;
 };
 
@@ -111,6 +113,8 @@ Deno.serve(async (req: Request) => {
     : crypto.randomUUID();
   const kind = body.kind ?? "";
   const verificationMode = body.verificationMode ?? "OPTIONAL";
+  // Private OCR text must never enter shared stable-knowledge caches.
+  const noStore = body.noStore === true;
   if (
     verificationMode !== "LOCAL" &&
     verificationMode !== "OPTIONAL" &&
@@ -141,6 +145,7 @@ Deno.serve(async (req: Request) => {
       context,
       kind,
       verificationMode,
+      noStore,
     );
 
     if (!quietRequestLogs) {

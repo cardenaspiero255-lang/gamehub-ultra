@@ -58,6 +58,7 @@ class UltraFrontierExecutionEngine(
         request: UltraGeneralQueryRequest,
         localChat: () -> String?
     ): UltraQueryExecutionAnswer {
+        request.requireCurrentPrivacy()
         val executionStartedNanos = nanoTime()
         val initialNetworkAvailable = networkAvailable()
         val plan = frontier.plan(
@@ -129,6 +130,7 @@ class UltraFrontierExecutionEngine(
             )?.let { return it }
         }
 
+        request.requireCurrentPrivacy()
         // The full research budget includes routing/planning. If it has
         // expired before the first provider call, fail closed without starting
         // a nominal "1 ms" request (the provider can still block longer).
@@ -168,6 +170,8 @@ class UltraFrontierExecutionEngine(
         )
 
         while (true) {
+            // A revoked OCR transcript cannot trigger another Frontier pass.
+            request.requireCurrentPrivacy()
             val verdict = critic.review(
                 plan = plan,
                 candidate = answer.toFrontierCandidate(attempt)
@@ -511,6 +515,7 @@ class UltraFrontierExecutionEngine(
         answer: UltraQueryExecutionAnswer,
         executionStartedNanos: Long
     ): UltraQueryExecutionAnswer {
+        request.requireCurrentPrivacy()
         val completedAtMillis = nowMillis()
         val gatedAnswer = evolution.finalGate(
             request = request,
@@ -524,11 +529,14 @@ class UltraFrontierExecutionEngine(
             answer = gatedAnswer,
             executionStartedNanos = executionStartedNanos
         )
-        evolution.rememberVerified(
-            request = request,
-            result = gatedAnswer,
-            nowMillis = completedAtMillis
-        )
+        // Never persist private OCR-originated research into evolving memory.
+        if (request.privacyEpoch == null) {
+            evolution.rememberVerified(
+                request = request,
+                result = gatedAnswer,
+                nowMillis = completedAtMillis
+            )
+        }
         return gatedAnswer
     }
 
@@ -571,6 +579,7 @@ class UltraFrontierExecutionEngine(
         localChat: () -> String?,
         nextStableProviderOffset: IntArray
     ): UltraQueryExecutionAnswer {
+        request.requireCurrentPrivacy()
         val attemptRequest = requestForAttempt(
             request = request,
             plan = plan,
