@@ -35,7 +35,7 @@ interface UltraResearchBackendTransport {
 
     // Backward-compatible for injected transports; the real transport fences
     // again after registering its cancellable socket and before sending text.
-    fun postResponse(
+    fun postGuardedResponse(
         endpoint: String,
         apiKey: String,
         body: String,
@@ -77,9 +77,18 @@ object HttpUrlConnectionUltraResearchTransport : UltraResearchBackendTransport {
         body: String,
         timeoutMillis: Long
     ): UltraResearchHttpResponse =
-        postResponse(endpoint, apiKey, body, timeoutMillis) {}
+        performPostResponse(endpoint, apiKey, body, timeoutMillis) {}
 
-    override fun postResponse(
+    override fun postGuardedResponse(
+        endpoint: String,
+        apiKey: String,
+        body: String,
+        timeoutMillis: Long,
+        privacyCheck: () -> Unit
+    ): UltraResearchHttpResponse =
+        performPostResponse(endpoint, apiKey, body, timeoutMillis, privacyCheck)
+
+    private fun performPostResponse(
         endpoint: String,
         apiKey: String,
         body: String,
@@ -184,7 +193,7 @@ class SupabaseUltraResearchProvider(
             val requestBody = UltraResearchJsonCodec.encodeRequest(request)
             // Encoding can take time: recheck just before the HTTP POST.
             request.requireCurrentPrivacy()
-            val result = transport.postResponse(
+            val result = transport.postGuardedResponse(
                 endpoint = endpoint,
                 apiKey = publishableKey,
                 body = requestBody,
