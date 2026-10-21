@@ -6621,6 +6621,7 @@ async function generalKnowledgeEvidence(
   context = "",
   signal?: AbortSignal,
   preferLiveSources = false,
+  noStore = false,
 ): Promise<ResearchResult> {
   const previousTopic = contextKnowledgeTopic(context);
   const currentTopic = extractGeneralKnowledgeQuery(query);
@@ -6662,7 +6663,9 @@ async function generalKnowledgeEvidence(
     ? previousTopic
     : topicPlan.relevanceTopic;
   const cacheTopic = dependentFollowUp ? topic : relevanceTopic;
-  if (!technicalTroubleshooting) {
+  const retainIfPublic = (result: ResearchResult): ResearchResult =>
+    noStore ? result : rememberStableKnowledge(deps.fetcher, cacheTopic, result);
+  if (!technicalTroubleshooting && !noStore) {
     const cached = cachedStableKnowledge(deps.fetcher, cacheTopic);
     if (cached) return cached;
   }
@@ -6677,11 +6680,7 @@ async function generalKnowledgeEvidence(
       lookupSignal,
     );
     if (generatorEvidence) {
-      return rememberStableKnowledge(
-        deps.fetcher,
-        cacheTopic,
-        generatorEvidence,
-      );
+      return retainIfPublic(generatorEvidence);
     }
 
     const wikipediaHost = "es.wikipedia.org";
@@ -6717,7 +6716,7 @@ async function generalKnowledgeEvidence(
         lookupSignal,
       );
       if (!wikidata.abstained) {
-        return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
+        return retainIfPublic(wikidata);
       }
       return abstain("Wikipedia no encontró una entrada utilizable para esta consulta.");
     }
@@ -6785,9 +6784,7 @@ async function generalKnowledgeEvidence(
       }
 
       const resolvedSource = source ?? summaryUrl;
-      return rememberStableKnowledge(
-        deps.fetcher,
-        cacheTopic,
+      return retainIfPublic(
         {
           claimKey: `general:${slug(title)}`,
           value: normalize(extract),
@@ -6808,7 +6805,7 @@ async function generalKnowledgeEvidence(
       lookupSignal,
     );
     if (!wikidata.abstained) {
-      return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
+      return retainIfPublic(wikidata);
     }
 
     return abstain(
@@ -6825,7 +6822,8 @@ async function generalKnowledgeEvidence(
     );
   };
 
-  if (technicalTroubleshooting) {
+  if (technicalTroubleshooting || noStore) {
+    // Do not share an in-flight public result or write private OCR text.
     return await loadStableEvidence(signal ?? new AbortController().signal);
   }
   return await coalescedStableKnowledgeLookup(
@@ -6915,6 +6913,7 @@ export async function routeResearchQuery(
   context = "",
   kind = "",
   verificationMode = "",
+  noStore = false,
 ): Promise<ResearchResult> {
   const routeDeadlineAt =
     performance.now() + generalKnowledgeRouteTimeoutMs(deps);
@@ -6981,6 +6980,7 @@ export async function routeResearchQuery(
         context,
         primaryController.signal,
         verificationMode === "REQUIRED",
+        noStore,
       ),
       primaryController,
       deps,
