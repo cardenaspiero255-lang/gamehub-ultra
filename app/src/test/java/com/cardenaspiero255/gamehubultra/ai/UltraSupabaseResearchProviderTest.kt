@@ -523,7 +523,7 @@ class UltraSupabaseResearchProviderTest {
             .copy(privacyEpoch = epoch)
         var checked = false
         kotlin.test.assertFailsWith<java.util.concurrent.CancellationException> {
-            HttpUrlConnectionUltraResearchTransport.postResponse(
+            HttpUrlConnectionUltraResearchTransport.postGuardedResponse(
                 endpoint = "http://127.0.0.1:1/test",
                 apiKey = "test",
                 body = UltraResearchJsonCodec.encodeRequest(request),
