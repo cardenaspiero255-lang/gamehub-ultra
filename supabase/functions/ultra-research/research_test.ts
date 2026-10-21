@@ -10514,3 +10514,58 @@ Deno.test(
     }
   },
 );
+
+Deno.test(
+  "private OCR knowledge bypasses existing cache, in-flight sharing and insertion",
+  async () => {
+    let wikipediaCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          wikipediaCalls++;
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  title: "Espectrómetro",
+                  extract:
+                    "Un espectrómetro mide las características de un espectro de luz.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Espectr%C3%B3metro",
+                },
+              },
+            },
+          });
+        }
+        return jsonResponse({ query: { search: [] } });
+      },
+      env: (key) =>
+        key === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE" ? "1" : undefined,
+    };
+    const ask = (noStore: boolean) =>
+      routeResearchQuery(
+        "¿Qué es un espectrómetro?",
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+        "OPTIONAL",
+        noStore,
+      );
+    const firstPrivate = await ask(true);
+    const secondPrivate = await ask(true);
+    const normal = await ask(false);
+    const cachedNormal = await ask(false);
+    if (
+      firstPrivate.abstained || secondPrivate.abstained ||
+      normal.abstained || cachedNormal.abstained || wikipediaCalls !== 3
+    ) {
+      throw new Error(
+        "Private responses must not read/write/shared-cache OCR text: " +
+          JSON.stringify({ wikipediaCalls, firstPrivate, secondPrivate, normal }),
+      );
+    }
+  },
+);
