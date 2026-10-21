@@ -50,7 +50,7 @@ internal object UltraResearchJsonCodec {
             append("\",\"requiresFreshData\":")
             append(request.requiresFreshData)
             // OCR epoch never leaves the device; carry only remote cache policy.
-            append(",\\\"noStore\\\":")
+            append(",\"noStore\":")
             append(request.privacyEpoch != null)
             append(",\"correlationId\":\"")
             append(escape(request.correlationId))
