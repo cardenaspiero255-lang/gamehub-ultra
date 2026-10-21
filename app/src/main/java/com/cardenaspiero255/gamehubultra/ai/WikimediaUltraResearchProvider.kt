@@ -15,6 +15,15 @@ fun interface UltraPublicKnowledgeTransport {
         timeoutMillis: Long
     ): UltraResearchHttpResponse
 
+    fun get(
+        url: String,
+        timeoutMillis: Long,
+        privacyCheck: () -> Unit
+    ): UltraResearchHttpResponse {
+        privacyCheck()
+        return get(url, timeoutMillis)
+    }
+
     fun cancelActiveRequest(worker: Thread) = Unit
 }
 
@@ -22,9 +31,13 @@ object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTran
     private val activeConnections =
         ConcurrentHashMap<Thread, HttpURLConnection>()
 
+    override fun get(url: String, timeoutMillis: Long): UltraResearchHttpResponse =
+        get(url, timeoutMillis) {}
+
     override fun get(
         url: String,
-        timeoutMillis: Long
+        timeoutMillis: Long,
+        privacyCheck: () -> Unit
     ): UltraResearchHttpResponse {
         if (Thread.currentThread().isInterrupted) {
             throw InterruptedException("Wikimedia request cancelled")
@@ -33,77 +46,86 @@ object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTran
         val worker = Thread.currentThread()
         val connection = URL(url).openConnection() as HttpURLConnection
         activeConnections[worker] = connection
-        val safeTimeout = timeoutMillis.coerceIn(
-            MIN_NETWORK_TIMEOUT_MS,
-            MAX_NETWORK_TIMEOUT_MS
-        ).toInt()
-        val deadlineNanos = System.nanoTime() +
-            TimeUnit.MILLISECONDS.toNanos(safeTimeout.toLong())
-        connection.requestMethod = "GET"
-        connection.connectTimeout = safeTimeout
-        // Use bounded socket waits so cancellation can take effect promptly even
-        // while HttpURLConnection is blocked waiting for response headers.
-        connection.readTimeout = minOf(safeTimeout, CANCELLATION_POLL_TIMEOUT_MS)
-        connection.setRequestProperty(
-            "User-Agent",
-            "GameHub-Ultra/0.3 (Android; public knowledge fallback; " +
-                "github.com/cardenaspiero255-lang/gamehub-ultra)"
-        )
-        connection.setRequestProperty("Accept", "application/json")
         return try {
-            val status = connection.responseCode
-            val contentLength = connection.contentLengthLong
-            if (contentLength > MAX_RESPONSE_BYTES) {
-                throw IllegalStateException(
-                    "Wikimedia response is too large: $contentLength bytes"
-                )
+            privacyCheck()
+            if (worker.isInterrupted) {
+                throw java.util.concurrent.CancellationException("Wikimedia request cancelled")
             }
-
-            val stream = if (status in 200..299) {
-                connection.inputStream
-            } else {
-                connection.errorStream
-            }
-            val body = stream?.use { input ->
-                val output = ByteArrayOutputStream(
-                    minOf(
-                        MAX_RESPONSE_BYTES,
-                        contentLength
-                            .takeIf { it > 0L }
-                            ?.coerceAtMost(MAX_RESPONSE_BYTES.toLong())
-                            ?.toInt()
-                            ?: DEFAULT_RESPONSE_BUFFER_BYTES
-                    )
-                )
-                val buffer = ByteArray(8_192)
-                while (true) {
-                    val remainingNanos = deadlineNanos - System.nanoTime()
-                    if (remainingNanos <= 0L) {
-                        throw IllegalStateException(
-                            "Wikimedia response read deadline exceeded"
-                        )
-                    }
-                    connection.readTimeout = TimeUnit.NANOSECONDS
-                        .toMillis(remainingNanos)
-                        .coerceIn(1L, safeTimeout.toLong())
-                        .toInt()
-
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    if (output.size() + read > MAX_RESPONSE_BYTES) {
-                        throw IllegalStateException(
-                            "Wikimedia response exceeded maximum size"
-                        )
-                    }
-                    output.write(buffer, 0, read)
-                }
-                output.toString(Charsets.UTF_8.name())
-            }.orEmpty()
-
-            UltraResearchHttpResponse(
-                statusCode = status,
-                body = body
+            val safeTimeout = timeoutMillis.coerceIn(
+                MIN_NETWORK_TIMEOUT_MS,
+                MAX_NETWORK_TIMEOUT_MS
+            ).toInt()
+            val deadlineNanos = System.nanoTime() +
+                TimeUnit.MILLISECONDS.toNanos(safeTimeout.toLong())
+            connection.requestMethod = "GET"
+            connection.connectTimeout = safeTimeout
+            // Use bounded socket waits so cancellation can take effect promptly even
+            // while HttpURLConnection is blocked waiting for response headers.
+            connection.readTimeout = minOf(safeTimeout, CANCELLATION_POLL_TIMEOUT_MS)
+            connection.setRequestProperty(
+                "User-Agent",
+                "GameHub-Ultra/0.3 (Android; public knowledge fallback; " +
+                    "github.com/cardenaspiero255-lang/gamehub-ultra)"
             )
+            connection.setRequestProperty("Accept", "application/json")
+            // Response-code access may initiate network I/O.
+            privacyCheck()
+            if (worker.isInterrupted) {
+                throw java.util.concurrent.CancellationException("Wikimedia request cancelled")
+            }
+            val status = connection.responseCode
+                val contentLength = connection.contentLengthLong
+                if (contentLength > MAX_RESPONSE_BYTES) {
+                    throw IllegalStateException(
+                        "Wikimedia response is too large: $contentLength bytes"
+                    )
+                }
+
+                val stream = if (status in 200..299) {
+                    connection.inputStream
+                } else {
+                    connection.errorStream
+                }
+                val body = stream?.use { input ->
+                    val output = ByteArrayOutputStream(
+                        minOf(
+                            MAX_RESPONSE_BYTES,
+                            contentLength
+                                .takeIf { it > 0L }
+                                ?.coerceAtMost(MAX_RESPONSE_BYTES.toLong())
+                                ?.toInt()
+                                ?: DEFAULT_RESPONSE_BUFFER_BYTES
+                        )
+                    )
+                    val buffer = ByteArray(8_192)
+                    while (true) {
+                        val remainingNanos = deadlineNanos - System.nanoTime()
+                        if (remainingNanos <= 0L) {
+                            throw IllegalStateException(
+                                "Wikimedia response read deadline exceeded"
+                            )
+                        }
+                        connection.readTimeout = TimeUnit.NANOSECONDS
+                            .toMillis(remainingNanos)
+                            .coerceIn(1L, safeTimeout.toLong())
+                            .toInt()
+
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        if (output.size() + read > MAX_RESPONSE_BYTES) {
+                            throw IllegalStateException(
+                                "Wikimedia response exceeded maximum size"
+                            )
+                        }
+                        output.write(buffer, 0, read)
+                    }
+                    output.toString(Charsets.UTF_8.name())
+                }.orEmpty()
+
+                UltraResearchHttpResponse(
+                    statusCode = status,
+                    body = body
+                )
         } finally {
             activeConnections.remove(worker, connection)
             connection.disconnect()
@@ -343,7 +365,9 @@ class WikimediaUltraResearchProvider(
     ): TransportOutcome {
         request.requireCurrentPrivacy()
         return try {
-            val response = transport.get(url, timeoutMillis)
+            val response = transport.get(url, timeoutMillis) {
+                request.requireCurrentPrivacy()
+            }
             request.requireCurrentPrivacy()
             TransportOutcome.Success(response)
         } catch (cancelled: java.util.concurrent.CancellationException) {
