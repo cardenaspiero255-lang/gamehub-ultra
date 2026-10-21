@@ -12,6 +12,8 @@ type ResearchRequest = {
   kind?: string;
   verificationMode?: string;
   requiresFreshData?: boolean;
+  // Private visual OCR requests must never populate the shared backend cache.
+  noStore?: boolean;
   correlationId?: string;
 };
 
