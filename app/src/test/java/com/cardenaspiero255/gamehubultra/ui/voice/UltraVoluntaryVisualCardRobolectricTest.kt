@@ -11,6 +11,11 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch
+import com.cardenaspiero255.gamehubultra.vision.UltraVoluntaryVisualSession
+import com.cardenaspiero255.gamehubultra.vision.UltraVisualReadControl
+import kotlinx.coroutines.Job
+import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.junit.Rule
 import org.junit.Test
@@ -66,6 +71,19 @@ class UltraVoluntaryVisualCardRobolectricTest {
 
     private fun confirm() {
         rule.onNodeWithTag("ultra-visual-confirm").performClick()
+    }
+
+
+    @Test fun disposalCleanupRevokesSessionReadControlAndRunningWork() {
+        val session = UltraVoluntaryVisualSession()
+        val ticket = session.beginUserSelection("game.a")
+        val control = UltraVisualReadControl()
+        val work = Job()
+        disposeVisualOperation(session, control, work)
+        assertTrue(control.isRevoked)
+        assertTrue(work.isCancelled)
+        assertFailsWith<java.util.concurrent.CancellationException> { control.ensureActive() }
+        assertFalse(session.acceptPickedUri(ticket, "content://media/picker/draft.png", "game.a"))
     }
 
     @Test fun previewNeedsSecondConsentAndNoDraftIsPreparedUntilFinalButton() {
