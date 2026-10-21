@@ -10534,7 +10534,8 @@ Deno.test(
                   title: "Espectrómetro",
                   extract:
                     "Un espectrómetro mide las características de un espectro de luz.",
-                  canonicalurl: "https://es.wikipedia.org/wiki/Espectr%C3%B3metro",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Espectr%C3%B3metro",
                 },
               },
             },
@@ -10564,7 +10565,12 @@ Deno.test(
     ) {
       throw new Error(
         "Private responses must not read/write/shared-cache OCR text: " +
-          JSON.stringify({ wikipediaCalls, firstPrivate, secondPrivate, normal }),
+          JSON.stringify({
+            wikipediaCalls,
+            firstPrivate,
+            secondPrivate,
+            normal,
+          }),
       );
     }
   },
