@@ -151,9 +151,9 @@ class GameHubRollbackPersistenceE2ETest {
             markSessionHandled = { reopened.markSessionHandled(sessionId) },
             recordPerformanceEvent = history::appendPerformanceEvent
         )
-        assertNotNull(replayed)
-        assertTrue(checkNotNull(replayed).changed)
-        assertEquals(PerformanceProfile.BALANCED, replayed.profile)
+        val replayDecision = checkNotNull(replayed)
+        assertTrue(replayDecision.changed)
+        assertEquals(PerformanceProfile.BALANCED, replayDecision.profile)
         assertTrue(reopened.wasSessionHandled(sessionId))
         assertNull(reopened.readPendingDecision(sessionId))
         assertEquals(PerformanceProfile.BALANCED, selection.profileForGameFlow(packageName).first())
