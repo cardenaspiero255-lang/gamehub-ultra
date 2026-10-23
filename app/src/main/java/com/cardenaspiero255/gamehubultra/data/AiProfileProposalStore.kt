@@ -38,6 +38,12 @@ class AiProfileProposalStore(context: Context) {
         require(cleanPackage.isNotEmpty()) { "packageName must not be blank" }
         require(proposal.version > 0) { "proposal version must be positive" }
 
+        // A delayed callback from an older proposal must not rewind the
+        // persisted rollback checkpoint for a newer user-approved version.
+        if (proposal.version < preferences.getInt(versionKey(cleanPackage), 0)) {
+            return
+        }
+
         preferences.edit()
             .putInt(versionKey(cleanPackage), proposal.version)
             .putString(
