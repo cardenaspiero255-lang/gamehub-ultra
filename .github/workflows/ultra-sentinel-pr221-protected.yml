@@ -1,0 +1,52 @@
+name: Ultra Sentinel PR221 Protected Exact Delta
+# All executable reviewer code is checked out from trusted main, never PR source.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+concurrency:
+  group: sentinel-pr221-protected-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  read-only-proof:
+    if: github.event.pull_request.number == 221
+    name: Trusted main PR221 exact blobs (manual review required)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout immutable reviewer from trusted main only
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts
+          persist-credentials: false
+      - name: Verify PR221 exact Git blobs with authenticated GitHub read API
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const path = require('node:path');
+            const trusted = require(path.resolve('.github/scripts/ultra_sentinel_pr221_scope.cjs'));
+            const proof = await trusted.attestExactPr221({
+              github,
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            if (proof.status !== 'AUTHENTICATED_EXACT_DELTA_MANUAL_REVIEW_REQUIRED' ||
+                proof.provenanceAuthenticated !== true ||
+                proof.manualReviewRequired !== true ||
+                proof.autoApproveAllowed !== false ||
+                proof.autoMergeAllowed !== false) {
+              core.setFailed('PR221 exact protected delta was not authenticated. Fail closed.');
+              return;
+            }
+            core.notice('PR221 exact authenticated blobs verified for SHA ' + proof.headSha +
+              '; manual review required, no approval or merge authorization.');
+            await core.summary.addHeading('PR221 trusted exact-delta evidence')
+              .addRaw('SHA: ' + proof.headSha + '; base: ' + proof.mainSha +
+              '; 2 protected mask insertions. No auto-approval or auto-merge.').write();
