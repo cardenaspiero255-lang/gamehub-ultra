@@ -1,0 +1,37 @@
+name: CAR29 PR227 isolated stage2b provenance diagnostics
+on:
+  push:
+    branches: [ci/car29-pr227-diagnostic-20261024]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout pinned candidate in unprivileged environment
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: c2e994521306eadf4d83d86cf690682eb409774d
+          persist-credentials: false
+      - name: Install locked AST parser without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run frozen bridge and new independent receipt regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "c2e994521306eadf4d83d86cf690682eb409774d"
+          node --check .github/scripts/ultra_sentinel_pr221_stage2.cjs
+          node --test .github/scripts/pr221_stage2.test.cjs .github/scripts/ultra_sentinel_pr172_scope.test.cjs
+          node - <<'JS'
+          const fs=require('node:fs');
+          const acorn=require('acorn');
+          const {findCapabilities}=require('./.github/scripts/ultra_sentinel_capabilities.cjs');
+          for(const p of ['.github/scripts/ultra_sentinel_pr221_stage2.cjs','.github/scripts/ultra_sentinel_pr172_scope.cjs','.github/scripts/ultra_sentinel_pr221_scope.cjs']){
+            const source=fs.readFileSync(p,'utf8');
+            const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',locations:true,ranges:true,allowHashBang:true});
+            const findings=findCapabilities(ast);
+            console.log('AST_CAPABILITY',p,findings.length);
+            if(findings.length>0)process.exitCode=4;
+          }
+          JS
