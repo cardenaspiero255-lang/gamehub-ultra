@@ -5,6 +5,7 @@ import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
@@ -86,11 +87,14 @@ class AiProfileTransactionalMutationTest {
             }
         }
         saveStarted.await()
-        val oldRollback = async(Dispatchers.Default) {
+        // Execute immediately until the shared mutex suspends; this proves
+        // rollback was attempted during the in-flight version-5 save.
+        val oldRollback = async(Dispatchers.Default, start = CoroutineStart.UNDISPATCHED) {
             AiProfileProposalStore(context).rollbackIfCurrent(game, 4) { _, config ->
                 active = config.performanceProfile
             }
         }
+        assertFalse(oldRollback.isCompleted)
         releaseSave.complete(Unit)
         assertTrue(newApply.await())
         assertFalse(oldRollback.await())
