@@ -569,29 +569,41 @@ internal fun GameHubUltraApp(
     }
 
     fun applyAiProfileProposal() {
+        val packageName = selectedGameForMemory ?: return
         val proposal = aiProfileProposal ?: return
-        applyAiProfileProposalForSelectedGame(
-            packageName = selectedGameForMemory,
-            proposal = proposal,
-            save = viewModel::saveGameProfileConfig,
-            recordApplied = aiProfileProposalStore::recordApplied,
-            onApplied = {
-                aiProfileRevision += 1
+        scope.launch {
+            try {
+                if (aiProfileProposalStore.applyProposal(
+                        packageName, proposal, viewModel::persistGameProfileConfig
+                    )
+                ) {
+                    aiProfileRevision += 1
+                }
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                android.util.Log.w("GameHubUltraApp", "AI profile apply failed", error)
             }
-        )
+        }
     }
 
     fun rollbackAiProfileProposal() {
+        val packageName = selectedGameForMemory ?: return
         val rollback = aiProfileRollbackState ?: return
-        rollbackAiProfileProposalForSelectedGame(
-            packageName = selectedGameForMemory,
-            rollback = rollback,
-            save = viewModel::saveGameProfileConfig,
-            clearRollback = aiProfileProposalStore::clearRollback,
-            onRolledBack = {
-                aiProfileRevision += 1
+        scope.launch {
+            try {
+                if (aiProfileProposalStore.rollbackIfCurrent(
+                        packageName, rollback.version, viewModel::persistGameProfileConfig
+                    )
+                ) {
+                    aiProfileRevision += 1
+                }
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                android.util.Log.w("GameHubUltraApp", "AI profile rollback failed", error)
             }
-        )
+        }
     }
 
     fun endGameSession() {
