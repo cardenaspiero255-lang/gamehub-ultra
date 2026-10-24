@@ -21,8 +21,22 @@ if [ "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" != "1" ]; then
   echo "REFUSING to run a destructive test on a physical Android device" >&2
   exit 2
 fi
+# The receipt refers to this exact tree, not to an untracked local variant.
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "CAR29 requires a clean tracked source tree for a SHA-bound receipt" >&2
+  exit 2
+fi
 COMMIT="$(git rev-parse HEAD)"
 gradle :app:connectedDebugAndroidTest --stacktrace
+
+# AGP instrumentation tasks can uninstall their runner APK during teardown.
+# Reinstall the *same locally built* debug artifacts for the two-phase proof.
+APP_APK=app/build/outputs/apk/debug/app-debug.apk
+TEST_APK=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+test -s "$APP_APK" || { echo "Missing debug APK" >&2; exit 1; }
+test -s "$TEST_APK" || { echo "Missing androidTest APK" >&2; exit 1; }
+adb install -r "$APP_APK"
+adb install -r "$TEST_APK"
 
 if ! adb shell pm path "$PACKAGE" | grep -q base.apk; then
   echo "Target debug application is not installed" >&2
