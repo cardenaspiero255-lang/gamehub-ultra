@@ -233,6 +233,7 @@ class UltraVerifiedResearchEngine(
     )
 
     override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+        request.requireCurrentPrivacy()
         if (UltraSensitiveInputGuard.containsSensitiveMaterial(request.originalText)) {
             return abstention(
                 timedOut = false,
@@ -243,12 +244,16 @@ class UltraVerifiedResearchEngine(
         }
 
         val key = cacheKey(request)
-        val usePersistentCache = shouldUsePersistentCache(request)
-        cache.get(
-            key = key,
-            nowMillis = nowMillis(),
-            allowPersistent = usePersistentCache
-        )?.let { return it }
+        // Never retain the recognized text of an image in research caches.
+        val privateOcrQuery = request.privacyEpoch != null
+        val usePersistentCache = !privateOcrQuery && shouldUsePersistentCache(request)
+        if (!privateOcrQuery) {
+            cache.get(
+                key = key,
+                nowMillis = nowMillis(),
+                allowPersistent = usePersistentCache
+            )?.let { return it }
+        }
 
         if (providers.isEmpty()) {
             return abstention(
@@ -323,8 +328,11 @@ class UltraVerifiedResearchEngine(
         )
 
         repeat(MAX_PROVIDER_ATTEMPTS) { attemptIndex ->
+            request.requireCurrentPrivacy()
             val result = try {
                 provider.fetchResult(request)
+            } catch (cancelled: java.util.concurrent.CancellationException) {
+                throw cancelled
             } catch (error: Exception) {
                 UltraProviderResult.Failure(
                     reasonCode = "PROVIDER_FAILURE",
@@ -332,6 +340,9 @@ class UltraVerifiedResearchEngine(
                     retryable = true
                 )
             }
+            // A provider may complete just as an external memory erase happens.
+            // An old request must not use this result or retry it.
+            request.requireCurrentPrivacy()
             lastResult = result
 
             val retryable = when (result) {
@@ -401,6 +412,7 @@ class UltraVerifiedResearchEngine(
 
         try {
             while (attempts.size < activeProviders.size) {
+                request.requireCurrentPrivacy()
                 val now = System.nanoTime()
                 val effectiveDeadline = minOf(
                     deadline,
@@ -421,10 +433,12 @@ class UltraVerifiedResearchEngine(
                     break
                 }
 
-                val completed = completion.poll(
-                    remaining,
-                    TimeUnit.NANOSECONDS
-                )
+                // With OCR consent, wake regularly to observe external erasure.
+                // Previously a single poll could block for the full 60 s.
+                val waitNanos = if (request.privacyEpoch == null) remaining
+                    else minOf(remaining, TimeUnit.MILLISECONDS.toNanos(50L))
+                val completed = completion.poll(waitNanos, TimeUnit.NANOSECONDS)
+                if (completed == null && waitNanos < remaining) continue
                 if (completed == null) {
                     if (
                         graceDeadlineNanos != null &&
@@ -491,6 +505,16 @@ class UltraVerifiedResearchEngine(
                     )
                 }
             }
+        } catch (cancelled: java.util.concurrent.CancellationException) {
+            submitted.forEachIndexed { index, future ->
+                if (!future.isDone) {
+                    providerWorkers[index].get()?.let { worker ->
+                        runCatching { activeProviders[index].cancelActiveRequest(worker) }
+                    }
+                    future.cancel(true)
+                }
+            }
+            throw cancelled
         } catch (interrupted: InterruptedException) {
             submitted.forEachIndexed { index, future ->
                 if (!future.isDone) {
@@ -506,6 +530,7 @@ class UltraVerifiedResearchEngine(
             throw interrupted
         }
 
+        request.requireCurrentPrivacy()
         if (timedOut || stoppedAfterGrace) {
             submitted.forEachIndexed { index, future ->
                 if (!future.isDone) {
@@ -605,7 +630,8 @@ class UltraVerifiedResearchEngine(
             )
 
             val allProvidersSettled = attempts.size >= activeProviders.size
-            if (allProvidersSettled) {
+            request.requireCurrentPrivacy()
+            if (allProvidersSettled && request.privacyEpoch == null) {
                 cache.put(
                     key = key,
                     result = result,
@@ -826,12 +852,15 @@ class UltraVerifiedResearchEngine(
             fallbackUsed = fallbackUsed
         )
 
-        cache.put(
-            key = key,
-            result = result,
-            expiresAtMillis = nowMillis() + ttlMillis(request),
-            persist = usePersistentCache && confidence != UltraAnswerConfidence.LOW
-        )
+        request.requireCurrentPrivacy()
+        if (request.privacyEpoch == null) {
+            cache.put(
+                key = key,
+                result = result,
+                expiresAtMillis = nowMillis() + ttlMillis(request),
+                persist = usePersistentCache && confidence != UltraAnswerConfidence.LOW
+            )
+        }
         return result
 
     }

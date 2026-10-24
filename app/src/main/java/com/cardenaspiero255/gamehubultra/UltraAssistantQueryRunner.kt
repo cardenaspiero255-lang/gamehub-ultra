@@ -43,13 +43,33 @@ internal class UltraAssistantQueryRunner(
         synchronized(this) { activeJob?.cancel(CancellationException("Private context erased")) }
     }
 
+    /**
+     * Verify the same admitted request immediately at its side-effect boundary.
+     * A private OCR request cannot inherit a new epoch after an erase while
+     * routing or collecting device status. Call before each external provider
+     * invocation, not only when the coroutine is launched.
+     */
+    fun requireCurrentDispatch(originatingGamePackage: String?) {
+        val acceptedEpoch = synchronized(this) { activePrivacyEpoch }
+        if (acceptedEpoch == null ||
+            !ownerScope.isActive ||
+            !UltraPrivacyEpoch.isCurrent(acceptedEpoch) ||
+            currentGamePackage() != originatingGamePackage
+        ) {
+            throw CancellationException("Private turn revoked before provider dispatch")
+        }
+    }
+
     fun launch(
         onAccepted: () -> Unit,
         onFailure: suspend (Throwable) -> Unit,
+        expectedPrivacyEpoch: Long? = null,
         block: suspend CoroutineScope.() -> Unit
     ): UltraAssistantQuerySubmission {
         val originatingGamePackage = currentGamePackage()
-        val requestPrivacyEpoch = UltraPrivacyEpoch.current()
+        // OCR-originated drafts MUST bring the epoch captured at user consent.
+        // Ordinary typed messages may use the current epoch as before.
+        val requestPrivacyEpoch = expectedPrivacyEpoch ?: UltraPrivacyEpoch.current()
         val accepted = synchronized(this) {
             if (_isRunning.value || !ownerScope.isActive || !UltraPrivacyEpoch.isCurrent(requestPrivacyEpoch)) {
                 false
@@ -69,6 +89,11 @@ internal class UltraAssistantQueryRunner(
                         throw CancellationException("Selected game changed before query acceptance")
                     }
                     onAccepted()
+                }
+                // The acceptance callback may itself race an external erase.
+                // Never dispatch a query under an epoch that has expired.
+                if (!UltraPrivacyEpoch.isCurrent(requestPrivacyEpoch)) {
+                    throw CancellationException("Private query authorization revoked before dispatch")
                 }
                 block()
             } catch (cancelled: CancellationException) {

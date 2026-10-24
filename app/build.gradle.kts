@@ -220,6 +220,8 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
+    // Bundled, on-device Latin OCR; user-supplied picker image only.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("io.sentry:sentry-android:8.56.0")
     baselineProfile(project(":baseline-profile"))
     debugImplementation("androidx.compose.ui:ui-tooling")

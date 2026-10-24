@@ -111,6 +111,58 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Runs the same persistence transaction used by the UI, independently testable
+ * without a Compose Activity. A declined/stale mutation must not refresh UI.
+ */
+internal fun launchAiProfileMutation(
+    scope: kotlinx.coroutines.CoroutineScope,
+    operation: String,
+    mutation: suspend () -> Boolean,
+    onChanged: () -> Unit
+): kotlinx.coroutines.Job = scope.launch {
+    try {
+        if (mutation()) onChanged()
+    } catch (cancel: kotlinx.coroutines.CancellationException) {
+        throw cancel
+    } catch (error: Exception) {
+        android.util.Log.w("GameHubUltraApp", "AI profile ${operation} failed", error)
+    }
+}
+
+
+/**
+ * Single UI ingress for applying a selected-game proposal. The null and stale
+ * paths never reach the DataStore persistence boundary.
+ */
+internal fun scheduleAiProfileApply(
+    scope: kotlinx.coroutines.CoroutineScope,
+    packageName: String?,
+    proposal: AiProfileProposal?,
+    store: AiProfileProposalStore,
+    save: suspend (String, GameProfileConfig) -> Unit,
+    onChanged: () -> Unit
+): kotlinx.coroutines.Job? {
+    if (packageName.isNullOrBlank() || proposal == null) return null
+    return launchAiProfileMutation(scope, "apply", {
+        store.applyProposal(packageName, proposal, save)
+    }, onChanged)
+}
+
+internal fun scheduleAiProfileRollback(
+    scope: kotlinx.coroutines.CoroutineScope,
+    packageName: String?,
+    rollback: AppliedAiProfileProposalState?,
+    store: AiProfileProposalStore,
+    save: suspend (String, GameProfileConfig) -> Unit,
+    onChanged: () -> Unit
+): kotlinx.coroutines.Job? {
+    if (packageName.isNullOrBlank() || rollback == null) return null
+    return launchAiProfileMutation(scope, "rollback", {
+        store.rollbackIfCurrent(packageName, rollback.version, save)
+    }, onChanged)
+}
+
 private const val MAX_CHAT_HISTORY = 8
 private const val COACH_RUNTIME_START_TOLERANCE_MS = 5_000L
 
@@ -569,29 +621,17 @@ internal fun GameHubUltraApp(
     }
 
     fun applyAiProfileProposal() {
-        val proposal = aiProfileProposal ?: return
-        applyAiProfileProposalForSelectedGame(
-            packageName = selectedGameForMemory,
-            proposal = proposal,
-            save = viewModel::saveGameProfileConfig,
-            recordApplied = aiProfileProposalStore::recordApplied,
-            onApplied = {
-                aiProfileRevision += 1
-            }
-        )
+        scheduleAiProfileApply(
+            scope, selectedGameForMemory, aiProfileProposal,
+            aiProfileProposalStore, viewModel::persistGameProfileConfig
+        ) { aiProfileRevision += 1 }
     }
 
     fun rollbackAiProfileProposal() {
-        val rollback = aiProfileRollbackState ?: return
-        rollbackAiProfileProposalForSelectedGame(
-            packageName = selectedGameForMemory,
-            rollback = rollback,
-            save = viewModel::saveGameProfileConfig,
-            clearRollback = aiProfileProposalStore::clearRollback,
-            onRolledBack = {
-                aiProfileRevision += 1
-            }
-        )
+        scheduleAiProfileRollback(
+            scope, selectedGameForMemory, aiProfileRollbackState,
+            aiProfileProposalStore, viewModel::persistGameProfileConfig
+        ) { aiProfileRevision += 1 }
     }
 
     fun endGameSession() {

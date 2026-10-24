@@ -10446,3 +10446,132 @@ Deno.test(
     }
   },
 );
+
+Deno.test(
+  "single-token person query rejects etymological homonym and selects corroborated Wikidata biography",
+  async () => {
+    let wikidataCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "es.wikipedia.org") {
+          if (url.searchParams.get("generator") === "search") {
+            return jsonResponse({
+              query: {
+                pages: {
+                  "1": {
+                    title: "Shakira",
+                    extract: "Shakira: nombre femenino de origen árabe.",
+                    index: 1,
+                    canonicalurl:
+                      "https://es.wikipedia.org/wiki/Shakira_(nombre)",
+                  },
+                },
+              },
+            });
+          }
+          return jsonResponse({ query: { search: [] } });
+        }
+        if (url.hostname === "www.wikidata.org") {
+          wikidataCalls++;
+          return jsonResponse({
+            search: [
+              {
+                id: "Q9999999",
+                label: "Shakira",
+                description: "nombre femenino de origen árabe",
+              },
+              {
+                id: "Q34424",
+                label: "Shakira",
+                description: "cantante y compositora colombiana",
+              },
+            ],
+          });
+        }
+        throw new Error("Unexpected provider " + url);
+      },
+      env: (key) =>
+        key === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE" ? "1" : undefined,
+    };
+    const result = await routeResearchQuery(
+      "¿Quién es Shakira?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+      "REQUIRED",
+    );
+    if (
+      result.abstained || wikidataCalls === 0 ||
+      !result.displayText?.toLowerCase().includes("cantante") ||
+      !result.displayText?.toLowerCase().includes("colombiana") ||
+      result.displayText?.includes("nombre femenino")
+    ) {
+      throw new Error(
+        "Single-token person identity must not be answered as name etymology: " +
+          JSON.stringify(result),
+      );
+    }
+  },
+);
+
+Deno.test(
+  "private OCR knowledge bypasses existing cache, in-flight sharing and insertion",
+  async () => {
+    let wikipediaCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          wikipediaCalls++;
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  title: "Espectrómetro",
+                  extract:
+                    "Un espectrómetro mide las características de un espectro de luz.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Espectr%C3%B3metro",
+                },
+              },
+            },
+          });
+        }
+        return jsonResponse({ query: { search: [] } });
+      },
+      env: (key) =>
+        key === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE" ? "1" : undefined,
+    };
+    const ask = (noStore: boolean) =>
+      routeResearchQuery(
+        "¿Qué es un espectrómetro?",
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+        "OPTIONAL",
+        noStore,
+      );
+    const firstPrivate = await ask(true);
+    const secondPrivate = await ask(true);
+    const normal = await ask(false);
+    const cachedNormal = await ask(false);
+    if (
+      firstPrivate.abstained || secondPrivate.abstained ||
+      normal.abstained || cachedNormal.abstained || wikipediaCalls !== 3
+    ) {
+      throw new Error(
+        "Private responses must not read/write/shared-cache OCR text: " +
+          JSON.stringify({
+            wikipediaCalls,
+            firstPrivate,
+            secondPrivate,
+            normal,
+          }),
+      );
+    }
+  },
+);

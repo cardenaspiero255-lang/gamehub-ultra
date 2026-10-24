@@ -7,6 +7,37 @@ import kotlin.test.assertTrue
 
 class UltraFrontierExecutionEngineTest {
     @Test
+    fun revokingOCRDuringFirstFrontierPassPreventsAnyFurtherResearchPass() {
+        val epoch = com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.current()
+        var calls = 0
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                calls += 1
+                com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.invalidate()
+                return UltraVerifiedResearchResult(
+                    message = "Reintento bloqueado por borrado de memoria",
+                    confidence = UltraAnswerConfidence.LOW,
+                    abstained = true,
+                    retryable = true
+                )
+            }
+        }
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            frontier = UltraFrontierOrchestrator(
+                UltraFrontierPolicy(deepResearchPassBudget = 3)
+            )
+        )
+        val request = UltraGeneralQueryRouter.classify(
+            "Compara dos teléfonos actuales y dime cuál es mejor"
+        ).copy(privacyEpoch = epoch)
+        kotlin.test.assertFailsWith<java.util.concurrent.CancellationException> {
+            engine.answer(request) { null }
+        }
+        assertEquals(1, calls)
+    }
+
+    @Test
     fun verifiedResearchRetriesWeakEvidenceAndAcceptsSecondStrongAttempt() {
         var calls = 0
         val gateway = object : UltraResearchGateway {

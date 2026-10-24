@@ -331,6 +331,86 @@ class CiPerformanceMetricsTests(unittest.TestCase):
         self.assertIn("rate limit exceeded", str(caught.exception))
         self.assertNotIn("super-secret-token", str(caught.exception))
 
+    def test_transient_http_502_retries_twice_and_returns_real_payload(self):
+        url = "https://api.github.com/repos/owner/repo/actions/runs/42"
+        def failure():
+            return urllib.error.HTTPError(url, 502, "Bad Gateway", {}, BytesIO(b'{"message":"Server Error"}'))
+        success = mock.MagicMock()
+        success.__enter__.return_value.read.return_value = b'{"id":42}'
+        with mock.patch.object(metrics.urllib.request, "urlopen",
+                               side_effect=[failure(), failure(), success]) as request, \
+             mock.patch.object(metrics.time, "sleep") as sleep:
+            result = metrics._get_json(url, "private-test-token")
+        self.assertEqual(result, {"id": 42})
+        self.assertEqual(request.call_count, 3)
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [1, 2])
+
+    def test_http_429_with_retry_after_must_not_use_short_gateway_backoff(self):
+        url = "https://api.github.com/repos/owner/repo/actions/runs/42"
+        errors = [
+            urllib.error.HTTPError(
+                url, 429, "Too Many Requests", {"Retry-After": "90"},
+                BytesIO(b'{"message":"rate limited"}'),
+            )
+            for _ in range(3)
+        ]
+        with mock.patch.object(metrics.urllib.request, "urlopen", side_effect=errors) as request, \
+             mock.patch.object(metrics.time, "sleep") as sleep:
+            with self.assertRaises(metrics.GitHubApiError) as caught:
+                metrics._get_json(url, "private-test-token")
+        self.assertEqual(caught.exception.status, 429)
+        self.assertEqual(request.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_http_429_without_retry_after_is_also_terminal(self):
+        url = "https://api.github.com/repos/owner/repo/actions/runs/42"
+        errors = [
+            urllib.error.HTTPError(url, 429, "Too Many Requests", {},
+                                    BytesIO(b'{"message":"rate limited"}'))
+            for _ in range(3)
+        ]
+        with mock.patch.object(metrics.urllib.request, "urlopen", side_effect=errors) as request, \
+             mock.patch.object(metrics.time, "sleep") as sleep:
+            with self.assertRaises(metrics.GitHubApiError) as caught:
+                metrics._get_json(url, "private-test-token")
+        self.assertEqual(caught.exception.status, 429)
+        self.assertEqual(request.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_http_401_never_retries_and_does_not_expose_token(self):
+        url = "https://api.github.com/repos/owner/repo/actions/runs/42"
+        err = urllib.error.HTTPError(url, 401, "Unauthorized", {},
+                                     BytesIO(b'{"message":"Bad credentials"}'))
+        with mock.patch.object(metrics.urllib.request, "urlopen", side_effect=err) as request, \
+             mock.patch.object(metrics.time, "sleep") as sleep:
+            with self.assertRaises(metrics.GitHubApiError) as caught:
+                metrics._get_json(url, "private-test-token")
+        self.assertEqual(caught.exception.status, 401)
+        self.assertEqual(request.call_count, 1)
+        sleep.assert_not_called()
+        self.assertNotIn("private-test-token", str(caught.exception))
+
+    def test_http_502_exhaustion_fails_closed_after_three_requests(self):
+        url = "https://api.github.com/repos/owner/repo/actions/runs/42"
+        errors = [
+            urllib.error.HTTPError(url, 502, "Bad Gateway", {},
+                                    BytesIO(b'{"message":"Server Error"}'))
+            for _ in range(3)
+        ]
+        with mock.patch.object(metrics.urllib.request, "urlopen", side_effect=errors) as request, \
+             mock.patch.object(metrics.time, "sleep") as sleep:
+            with self.assertRaises(metrics.GitHubApiError) as caught:
+                metrics._get_json(url, "private-test-token")
+        self.assertEqual(caught.exception.status, 502)
+        self.assertEqual(request.call_count, 3)
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [1, 2])
+
+    def test_wrong_host_stays_blocked_before_any_network_retry(self):
+        with mock.patch.object(metrics.urllib.request, "urlopen") as request:
+            with self.assertRaisesRegex(RuntimeError, "Refusing non-GitHub"):
+                metrics._get_json("https://evil.invalid/actions/runs/42", "token")
+        request.assert_not_called()
+
     def test_collect_skips_history_from_different_job_topology(self):
         current_run = {
             "id": 999,

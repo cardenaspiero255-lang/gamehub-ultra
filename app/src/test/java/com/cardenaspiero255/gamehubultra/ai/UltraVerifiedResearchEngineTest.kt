@@ -1,5 +1,9 @@
 package com.cardenaspiero255.gamehubultra.ai
 
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -7,6 +11,74 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class UltraVerifiedResearchEngineTest {
+    @Test
+    fun erasureWhileProviderIsBlockedDisconnectsActiveWorkerBeforeResearchTimeout() {
+        val epoch = com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.current()
+        val started = CountDownLatch(1)
+        val released = CountDownLatch(1)
+        val cancelled = AtomicBoolean(false)
+        val provider = object : UltraResearchProvider {
+            override val id = "cancellable-private-ocr"
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                started.countDown()
+                released.await(5, TimeUnit.SECONDS)
+                return evidence("private", "value", "Never send again")
+            }
+            override fun cancelActiveRequest(worker: Thread) {
+                cancelled.set(true)
+                released.countDown()
+                worker.interrupt()
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
+        val eraser = thread(start = true) {
+            if (started.await(3, TimeUnit.SECONDS)) {
+                com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.invalidate()
+            }
+        }
+        try {
+            val request = UltraGeneralQueryRouter.classify("noticias de Android hoy")
+                .copy(privacyEpoch = epoch, timeoutMillis = 4_000L)
+            kotlin.test.assertFailsWith<java.util.concurrent.CancellationException> {
+                engine.answer(request)
+            }
+            assertTrue(cancelled.get(), "The blocking provider must receive cancelActiveRequest")
+        } finally {
+            released.countDown()
+            eraser.join(5_000)
+            engine.close()
+        }
+    }
+
+    @Test
+    fun revokingOCRDuringProviderFailurePreventsRetryingItsPrivateText() {
+        val originalEpoch = com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.current()
+        val providerCalls = AtomicInteger()
+        val provider = object : UltraResearchProvider {
+            override val id = "private-ocr-research"
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                error("The failure path must use fetchResult")
+            override fun fetchResult(request: UltraGeneralQueryRequest): UltraProviderResult {
+                providerCalls.incrementAndGet()
+                com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch.invalidate()
+                return UltraProviderResult.Failure(
+                    reasonCode = "TRANSIENT", retryable = true
+                )
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
+        try {
+            val request = UltraGeneralQueryRouter.classify("noticias de Android hoy")
+                .copy(privacyEpoch = originalEpoch)
+            kotlin.test.assertFailsWith<java.util.concurrent.CancellationException> {
+                engine.answer(request)
+            }
+            assertEquals(1, providerCalls.get(), "No second provider attempt after OCR revocation")
+        } finally {
+            engine.close()
+        }
+    }
+
     @Test
     fun slowProviderIsCutOffByRequestTimeout() {
         val provider = object : UltraResearchProvider {

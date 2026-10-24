@@ -21,6 +21,8 @@ import com.cardenaspiero255.gamehubultra.*
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.*
 import com.cardenaspiero255.gamehubultra.voice.UltraPrivacyEpoch
+import com.cardenaspiero255.gamehubultra.vision.UltraVisualDraftPolicy
+import com.cardenaspiero255.gamehubultra.vision.UltraVisualReadControl
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import com.cardenaspiero255.gamehubultra.voice.*
@@ -67,7 +69,10 @@ internal fun VoiceAssistantCard(
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
     assistantInputEnabled: Boolean,
-    startListeningRequest: Int = 0
+    startListeningRequest: Int = 0,
+    // Internal-only seams for hermetic Compose privacy regressions.
+    visualPickerOverride: (((android.net.Uri?) -> Unit) -> Unit)? = null,
+    visualOcrOverride: (suspend (android.content.Context, android.net.Uri, UltraVisualReadControl, android.os.CancellationSignal) -> String)? = null
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -115,8 +120,11 @@ internal fun VoiceAssistantCard(
     var memoryPrivacyNotice by remember { mutableStateOf<String?>(null) }
     val privateMemoryStore = ultraRuntime.memoryPrivacy
     var memoryConsent by remember { mutableStateOf(false) }
+    var visualResetKey by remember { mutableIntStateOf(0) }
     var memoryRetentionDays by remember { mutableIntStateOf(30) }
     var chatMessage by remember { mutableStateOf("") }
+    var visualDraftOrigin by remember { mutableStateOf<UltraVisualDraftPolicy.Origin?>(null) }
+    val privacyRevision by UltraPrivacyEpoch.changes.collectAsState()
     var activeVoiceTurn by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val chatSending by queryRunner.isRunning.collectAsStateWithLifecycle()
     var permissionGranted by remember {
@@ -128,7 +136,38 @@ internal fun VoiceAssistantCard(
         )
     }
 
+    LaunchedEffect(privacyRevision, aiContext.selectedGamePackage) {
+        // A StateFlow emission can be observed one composition behind the
+        // atomic epoch when a new OCR draft is prepared at the same time.
+        // Use the authoritative epoch for both revocation and send-time gates.
+        if (!UltraVisualDraftPolicy.canSend(
+                visualDraftOrigin, UltraPrivacyEpoch.current(), aiContext.selectedGamePackage
+            )
+        ) {
+            chatMessage = ""
+            visualDraftOrigin = null
+            showTextChat = false
+            visualResetKey++
+        }
+    }
+
     fun sendTypedChatMessage() {
+        // Capture the OCR origin ONCE; a reactive erase must not turn the
+        // same private message into an unrestricted ordinary typed request.
+        val draftOriginAtSend = visualDraftOrigin
+        // Observe privacy and game provenance again synchronously at send-time;
+        // a Compose recomposition may not yet have processed an external erase.
+        if (!UltraVisualDraftPolicy.canSend(
+                draftOriginAtSend,
+                UltraPrivacyEpoch.current(),
+                latestAiContext.selectedGamePackage
+            )
+        ) {
+            chatMessage = ""
+            visualDraftOrigin = null
+            showTextChat = false
+            return
+        }
         val message = chatMessage.trim()
         if (!latestAssistantInputEnabled || message.isBlank() || chatSending) return
 
@@ -146,8 +185,12 @@ internal fun VoiceAssistantCard(
 
         val failureAnswer = "No pude completar la consulta. Inténtalo de nuevo."
         val submission = queryRunner.launch(
+            // Runner rechecks this immutable consent epoch during admission and
+            // immediately before external query dispatch.
+            expectedPrivacyEpoch = draftOriginAtSend?.privacyEpoch,
             onAccepted = {
                 chatMessage = ""
+                visualDraftOrigin = null
                 latestOnConversationChanged(withUser)
             },
             onFailure = {
@@ -164,6 +207,7 @@ internal fun VoiceAssistantCard(
             }
         ) {
             val deviceStatus = VoiceDeviceStatusProvider.read(context)
+            queryRunner.requireCurrentDispatch(originatingGamePackage)
             val route = agentRouter.route(
                 UltraAgentRoutingRequest(
                     transcript = message.trim(),
@@ -178,8 +222,12 @@ internal fun VoiceAssistantCard(
                 )
             )
 
+            // Routing can suspend; revocation during that interval must
+            // terminate the turn before any provider or command side effect.
+            queryRunner.requireCurrentDispatch(originatingGamePackage)
             when (route) {
                 is UltraAgentRoute.Utility -> {
+                    queryRunner.requireCurrentDispatch(originatingGamePackage)
                     val answer = UltraUtilityRuntimeExecutor.executeIfCurrent(
                         answer = route.answer,
                         networkGaming = networkGaming,
@@ -200,9 +248,22 @@ internal fun VoiceAssistantCard(
                 }
 
                 is UltraAgentRoute.Chat -> {
+                    queryRunner.requireCurrentDispatch(originatingGamePackage)
+                    // The research engine may spawn provider workers and retry.
+                    // Carry the original epoch through request.copy() so those
+                    // workers can recheck it at each provider attempt.
+                    val consentBoundRoute = if (draftOriginAtSend == null) route else {
+                        route.copy(query = route.query?.copy(
+                            privacyEpoch = draftOriginAtSend.privacyEpoch
+                        ))
+                    }
+                    // Device status and route construction can suspend or race erasure:
+                    // fence once more at the actual remote/provider dispatch boundary.
+                    queryRunner.requireCurrentDispatch(originatingGamePackage)
                     val answer = queryExecutor.answer(
-                        route = route,
+                        route = consentBoundRoute,
                         stableKnowledgeFallback = {
+                            queryRunner.requireCurrentDispatch(originatingGamePackage)
                             aiAdvisor.generalKnowledgeChatOrNull(
                                 message = route.message,
                                 context = turnAiContext,
@@ -210,6 +271,7 @@ internal fun VoiceAssistantCard(
                             )
                         }
                     ) {
+                        queryRunner.requireCurrentDispatch(originatingGamePackage)
                         aiAdvisor.chat(
                             message = route.message,
                             context = turnAiContext,
@@ -230,6 +292,7 @@ internal fun VoiceAssistantCard(
                 }
 
                 is UltraAgentRoute.Command -> {
+                    queryRunner.requireCurrentDispatch(originatingGamePackage)
                     val result = VoiceCommandEngine.execute(
                         command = route.command,
                         gamesProvider = { GameLibrary.discover(context).games },
@@ -242,6 +305,7 @@ internal fun VoiceAssistantCard(
                         isProfileAvailable = { _ -> true },
                         statusProvider = { VoiceDeviceStatusProvider.read(context) },
                         aiAdvisor = { question ->
+                            queryRunner.requireCurrentDispatch(originatingGamePackage)
                             aiAdvisor.advise(question, latestAiContext)
                         },
                         aliasIntentResolver = aiIntentResolver,
@@ -543,6 +607,8 @@ applyNetworkProfile = networkGaming::applyProfile
 
     fun invalidatePrivateTurns() {
         UltraPrivacyEpoch.invalidate()
+        visualResetKey++
+        visualDraftOrigin = null
         queryRunner.cancelActive()
         activeVoiceTurn?.cancel()
         voiceController.stopListening()
@@ -731,8 +797,11 @@ applyNetworkProfile = networkGaming::applyProfile
                     }
                     OutlinedTextField(
                         value = chatMessage,
-                        onValueChange = { chatMessage = it.take(1000) },
-                        modifier = Modifier.fillMaxWidth(),
+                        onValueChange = {
+                            chatMessage = it.take(1000)
+                            // Continue treating edited OCR text as private until the user sends.
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("ultra-chat-private-draft"),
                         label = { Text(stringResource(R.string.ai_chat_input_label)) },
                         placeholder = { Text(stringResource(R.string.ai_chat_input_hint)) },
                         enabled = assistantInputEnabled && !chatSending,
@@ -743,7 +812,10 @@ applyNetworkProfile = networkGaming::applyProfile
             confirmButton = {
                 Button(
                     onClick = ::sendTypedChatMessage,
-                    enabled = assistantInputEnabled && chatMessage.isNotBlank() && !chatSending
+                    enabled = assistantInputEnabled && chatMessage.isNotBlank() && !chatSending &&
+                        UltraVisualDraftPolicy.canSend(
+                            visualDraftOrigin, UltraPrivacyEpoch.current(), aiContext.selectedGamePackage
+                        )
                 ) {
                     Text(
                         if (chatSending) {
@@ -759,6 +831,7 @@ applyNetworkProfile = networkGaming::applyProfile
                     onClick = {
                         latestOnConversationChanged(emptyList())
                         chatMessage = ""
+                        visualDraftOrigin = null
                     },
                     enabled = !chatSending
                 ) {
@@ -885,6 +958,29 @@ applyNetworkProfile = networkGaming::applyProfile
                     }
                 }
             ) { Text("Privacidad y memoria") }
+            key(visualResetKey) {
+                UltraVoluntaryVisualCard(
+                    gamePackage = aiContext.selectedGamePackage,
+                    enabled = assistantInputEnabled,
+                    pickerOverride = visualPickerOverride,
+                    ocrOverride = visualOcrOverride,
+                    onUseRecognizedText = { extracted, authorizedOrigin ->
+                        // Never restamp old OCR bytes with a newly observed epoch.
+                        // The child supplies the immutable scope captured at picker consent.
+                        if (UltraVisualDraftPolicy.canSend(
+                                authorizedOrigin,
+                                UltraPrivacyEpoch.current(),
+                                latestAiContext.selectedGamePackage
+                            )
+                        ) {
+                            visualDraftOrigin = authorizedOrigin
+                            chatMessage = ("Ayúdame a interpretar este texto de una imagen elegida por mí:\n" +
+                                extracted.take(800)).take(1000)
+                            showTextChat = true
+                        }
+                    }
+                )
+            }
             Text(
                 stringResource(
                     R.string.voice_selected_profile,

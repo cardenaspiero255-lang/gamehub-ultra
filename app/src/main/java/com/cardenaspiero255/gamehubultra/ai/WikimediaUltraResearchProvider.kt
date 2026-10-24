@@ -15,6 +15,15 @@ fun interface UltraPublicKnowledgeTransport {
         timeoutMillis: Long
     ): UltraResearchHttpResponse
 
+    fun getGuardedResponse(
+        url: String,
+        timeoutMillis: Long,
+        privacyCheck: () -> Unit
+    ): UltraResearchHttpResponse {
+        privacyCheck()
+        return get(url, timeoutMillis)
+    }
+
     fun cancelActiveRequest(worker: Thread) = Unit
 }
 
@@ -22,9 +31,20 @@ object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTran
     private val activeConnections =
         ConcurrentHashMap<Thread, HttpURLConnection>()
 
-    override fun get(
+    override fun get(url: String, timeoutMillis: Long): UltraResearchHttpResponse =
+        performGet(url, timeoutMillis) {}
+
+    override fun getGuardedResponse(
         url: String,
-        timeoutMillis: Long
+        timeoutMillis: Long,
+        privacyCheck: () -> Unit
+    ): UltraResearchHttpResponse =
+        performGet(url, timeoutMillis, privacyCheck)
+
+    private fun performGet(
+        url: String,
+        timeoutMillis: Long,
+        privacyCheck: () -> Unit
     ): UltraResearchHttpResponse {
         if (Thread.currentThread().isInterrupted) {
             throw InterruptedException("Wikimedia request cancelled")
@@ -33,24 +53,33 @@ object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTran
         val worker = Thread.currentThread()
         val connection = URL(url).openConnection() as HttpURLConnection
         activeConnections[worker] = connection
-        val safeTimeout = timeoutMillis.coerceIn(
-            MIN_NETWORK_TIMEOUT_MS,
-            MAX_NETWORK_TIMEOUT_MS
-        ).toInt()
-        val deadlineNanos = System.nanoTime() +
-            TimeUnit.MILLISECONDS.toNanos(safeTimeout.toLong())
-        connection.requestMethod = "GET"
-        connection.connectTimeout = safeTimeout
-        // Use bounded socket waits so cancellation can take effect promptly even
-        // while HttpURLConnection is blocked waiting for response headers.
-        connection.readTimeout = minOf(safeTimeout, CANCELLATION_POLL_TIMEOUT_MS)
-        connection.setRequestProperty(
-            "User-Agent",
-            "GameHub-Ultra/0.3 (Android; public knowledge fallback; " +
-                "github.com/cardenaspiero255-lang/gamehub-ultra)"
-        )
-        connection.setRequestProperty("Accept", "application/json")
         return try {
+            privacyCheck()
+            if (worker.isInterrupted) {
+                throw java.util.concurrent.CancellationException("Wikimedia request cancelled")
+            }
+            val safeTimeout = timeoutMillis.coerceIn(
+                MIN_NETWORK_TIMEOUT_MS,
+                MAX_NETWORK_TIMEOUT_MS
+            ).toInt()
+            val deadlineNanos = System.nanoTime() +
+                TimeUnit.MILLISECONDS.toNanos(safeTimeout.toLong())
+            connection.requestMethod = "GET"
+            connection.connectTimeout = safeTimeout
+            // Use bounded socket waits so cancellation can take effect promptly even
+            // while HttpURLConnection is blocked waiting for response headers.
+            connection.readTimeout = minOf(safeTimeout, CANCELLATION_POLL_TIMEOUT_MS)
+            connection.setRequestProperty(
+                "User-Agent",
+                "GameHub-Ultra/0.3 (Android; public knowledge fallback; " +
+                    "github.com/cardenaspiero255-lang/gamehub-ultra)"
+            )
+            connection.setRequestProperty("Accept", "application/json")
+            // Response-code access may initiate network I/O.
+            privacyCheck()
+            if (worker.isInterrupted) {
+                throw java.util.concurrent.CancellationException("Wikimedia request cancelled")
+            }
             val status = connection.responseCode
             val contentLength = connection.contentLengthLong
             if (contentLength > MAX_RESPONSE_BYTES) {
@@ -150,6 +179,7 @@ class WikimediaUltraResearchProvider(
         }
 
     override fun fetchResult(request: UltraGeneralQueryRequest): UltraProviderResult {
+        request.requireCurrentPrivacy()
         if (
             request.kind != UltraGeneralQueryKind.GENERAL_KNOWLEDGE ||
             request.verificationMode != UltraVerificationMode.OPTIONAL ||
@@ -197,7 +227,7 @@ class WikimediaUltraResearchProvider(
         ) ?: return timeoutFailure("wikimedia-search")
 
         val searchResponse = when (
-            val attempt = getSafely(searchUrl, searchTimeout)
+            val attempt = getSafely(searchUrl, searchTimeout, request)
         ) {
             is TransportOutcome.Success -> attempt.response
             is TransportOutcome.Failure ->
@@ -229,7 +259,8 @@ class WikimediaUltraResearchProvider(
                     topic = topic,
                     spanishTitle = title,
                     deadlineNanos = deadlineNanos,
-                    perCallBudgetMillis = perCallBudgetMillis
+                    perCallBudgetMillis = perCallBudgetMillis,
+                    request = request
                 )
         val titleOrTrustedMatch =
             directTitleMatch || verifiedTranslatedTitleMatch
@@ -264,7 +295,7 @@ class WikimediaUltraResearchProvider(
         ) ?: return timeoutFailure("wikimedia-extract")
 
         val extractResponse = when (
-            val attempt = getSafely(extractUrl, extractTimeout)
+            val attempt = getSafely(extractUrl, extractTimeout, request)
         ) {
             is TransportOutcome.Success -> attempt.response
             is TransportOutcome.Failure ->
@@ -336,13 +367,22 @@ class WikimediaUltraResearchProvider(
 
     private fun getSafely(
         url: String,
-        timeoutMillis: Long
-    ): TransportOutcome =
-        try {
-            TransportOutcome.Success(transport.get(url, timeoutMillis))
+        timeoutMillis: Long,
+        request: UltraGeneralQueryRequest
+    ): TransportOutcome {
+        request.requireCurrentPrivacy()
+        return try {
+            val response = transport.getGuardedResponse(url, timeoutMillis) {
+                request.requireCurrentPrivacy()
+            }
+            request.requireCurrentPrivacy()
+            TransportOutcome.Success(response)
+        } catch (cancelled: java.util.concurrent.CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             TransportOutcome.Failure(error.message)
         }
+    }
 
     private fun TransportOutcome.Failure.toProviderResult(
         stage: String
@@ -509,7 +549,8 @@ class WikimediaUltraResearchProvider(
         topic: String,
         spanishTitle: String,
         deadlineNanos: Long,
-        perCallBudgetMillis: Long
+        perCallBudgetMillis: Long,
+        request: UltraGeneralQueryRequest
     ): Boolean {
         val validationUrl = buildString {
             append("https://en.wikipedia.org/w/api.php")
@@ -525,7 +566,7 @@ class WikimediaUltraResearchProvider(
         ) ?: return false
 
         val response = when (
-            val attempt = getSafely(validationUrl, validationTimeout)
+            val attempt = getSafely(validationUrl, validationTimeout, request)
         ) {
             is TransportOutcome.Success -> attempt.response
             is TransportOutcome.Failure -> return false
