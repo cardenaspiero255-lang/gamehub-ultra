@@ -137,6 +137,24 @@ class GameHubRollbackPersistenceE2ETest {
         assertEquals(PerformanceProfile.X4, selection.profileForGameFlow(packageName).first())
         assertNotNull(adaptiveState.readPendingDecision(sessionId))
 
+        // The delayed proposal arrives while the adaptive retry is still pending,
+        // not after the two mechanisms have already finished independently.
+        AiProfileProposalStore(context).recordApplied(
+            packageName,
+            approved.copy(
+                version = 3,
+                previousKnownGoodConfig = GameProfileConfig(
+                    performanceProfile = PerformanceProfile.X4
+                )
+            )
+        )
+        assertEquals(4, AiProfileProposalStore(context).rollbackState(packageName)?.version)
+        assertEquals(
+            PerformanceProfile.BALANCED,
+            AiProfileProposalStore(context).rollbackState(packageName)
+                ?.previousKnownGoodConfig?.performanceProfile
+        )
+
         // Simulate a new GameHub process: recreate both SharedPreferences adapters and optimizer.
         val reopened = PerGameAdaptiveStatePreferencesStore(context)
         val replayed = processCompletedAdaptiveSession(
@@ -196,6 +214,10 @@ class GameHubRollbackPersistenceE2ETest {
         assertEquals(1, rollbackCount)
         assertNull(AiProfileProposalStore(context).rollbackState(packageName))
         assertEquals(PerformanceProfile.BALANCED, selection.profileForGameFlow(packageName).first())
+        // A duplicate callback for the cleared version cannot resurrect user rollback.
+        AiProfileProposalStore(context).recordApplied(packageName, approved)
+        assertNull(AiProfileProposalStore(context).rollbackState(packageName))
+        assertEquals(5, AiProfileProposalStore(context).nextVersion(packageName))
 
         // Reentering the completed session may not emit a duplicate policy change.
         val duplicate = processCompletedAdaptiveSession(
