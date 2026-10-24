@@ -49,11 +49,12 @@ function latestProtectedRun(result,workflowId,head,base){
   const link=run.pull_requests[0];
   if(link?.number!==221||link.head?.sha!==head||link.base?.sha!==base)
    throw Error('INCORRECT_PR_LINKAGE');
+  if(time===latestTime&&latest&&run.id!==latest.id)
+   throw Error('AMBIGUOUS_RUN_ORDER');
   if(time>latestTime||time===latestTime&&run.run_attempt>latest?.run_attempt){
    latest=run;
    latestTime=time;
-  }else if(time===latestTime&&run.id!==latest.id)
-   throw Error('AMBIGUOUS_RUN_ORDER');
+  }
  }
  if(!latest||latest.status!=='completed'||latest.conclusion!=='success')
   throw Error('LATEST_PROTECTED_RUN_NOT_SUCCESS');
