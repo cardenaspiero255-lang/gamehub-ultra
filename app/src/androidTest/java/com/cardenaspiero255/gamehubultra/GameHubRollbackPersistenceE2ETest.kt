@@ -49,6 +49,36 @@ class GameHubRollbackPersistenceE2ETest {
         )
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
+        val phase = InstrumentationRegistry.getArguments().getString("car29Phase")
+        if (phase == "verify") {
+            // The separate ADB driver must have force-stopped and restarted the
+            // app after the "prepare" instrumentation process exited.
+            val marker = context.getSharedPreferences(
+                "car29_process_restart_probe", android.content.Context.MODE_PRIVATE
+            )
+            val persistedPackage = checkNotNull(marker.getString("packageName", null))
+            val persistedSession = checkNotNull(marker.getString("sessionId", null))
+            val selectionAfterRestart =
+                GameHubProductionComposition.selectionRepository(context)
+            val stateAfterRestart = PerGameAdaptiveStatePreferencesStore(context)
+            val historyAfterRestart =
+                com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository(context)
+            assertEquals(
+                PerformanceProfile.BALANCED,
+                selectionAfterRestart.profileForGameFlow(persistedPackage).first()
+            )
+            assertTrue(stateAfterRestart.wasSessionHandled(persistedSession))
+            assertNull(stateAfterRestart.readPendingDecision(persistedSession))
+            assertNull(AiProfileProposalStore(context).rollbackState(persistedPackage))
+            assertEquals(5, AiProfileProposalStore(context).nextVersion(persistedPackage))
+            assertEquals(
+                1,
+                historyAfterRestart.performanceHistoryFlow(50).first()
+                    .count { it.sessionId == persistedSession }
+            )
+            return@runBlocking
+        }
+        require(phase == null || phase == "prepare") { "Unsupported CAR-29 phase" }
         val suffix = UUID.randomUUID().toString().replace("-", "")
         val packageName = "com.example.gamehub.rollback.$suffix"
         val sessionId = "car29-rollback-$suffix"
@@ -232,6 +262,17 @@ class GameHubRollbackPersistenceE2ETest {
                 selection.profileForGameFlow(packageName).first()
             )
             assertTrue(PerGameAdaptiveStatePreferencesStore(context).wasSessionHandled(sessionId))
+        }
+
+        if (phase == "prepare") {
+            // Commit the only probe needed by the second, freshly started
+            // instrumentation process. No device identifiers are recorded.
+            assertTrue(context.getSharedPreferences(
+                "car29_process_restart_probe", android.content.Context.MODE_PRIVATE
+            ).edit()
+                .putString("packageName", packageName)
+                .putString("sessionId", sessionId)
+                .commit())
         }
     }
 }
