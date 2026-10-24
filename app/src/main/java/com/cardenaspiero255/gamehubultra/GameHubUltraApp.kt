@@ -130,6 +130,39 @@ internal fun launchAiProfileMutation(
     }
 }
 
+
+/**
+ * Single UI ingress for applying a selected-game proposal. The null and stale
+ * paths never reach the DataStore persistence boundary.
+ */
+internal fun scheduleAiProfileApply(
+    scope: kotlinx.coroutines.CoroutineScope,
+    packageName: String?,
+    proposal: AiProfileProposal?,
+    store: AiProfileProposalStore,
+    save: suspend (String, GameProfileConfig) -> Unit,
+    onChanged: () -> Unit
+): kotlinx.coroutines.Job? {
+    if (packageName.isNullOrBlank() || proposal == null) return null
+    return launchAiProfileMutation(scope, "apply", {
+        store.applyProposal(packageName, proposal, save)
+    }, onChanged)
+}
+
+internal fun scheduleAiProfileRollback(
+    scope: kotlinx.coroutines.CoroutineScope,
+    packageName: String?,
+    rollback: AppliedAiProfileProposalState?,
+    store: AiProfileProposalStore,
+    save: suspend (String, GameProfileConfig) -> Unit,
+    onChanged: () -> Unit
+): kotlinx.coroutines.Job? {
+    if (packageName.isNullOrBlank() || rollback == null) return null
+    return launchAiProfileMutation(scope, "rollback", {
+        store.rollbackIfCurrent(packageName, rollback.version, save)
+    }, onChanged)
+}
+
 private const val MAX_CHAT_HISTORY = 8
 private const val COACH_RUNTIME_START_TOLERANCE_MS = 5_000L
 
@@ -588,23 +621,17 @@ internal fun GameHubUltraApp(
     }
 
     fun applyAiProfileProposal() {
-        val packageName = selectedGameForMemory ?: return
-        val proposal = aiProfileProposal ?: return
-        launchAiProfileMutation(scope, "apply", mutation = {
-            aiProfileProposalStore.applyProposal(
-                packageName, proposal, viewModel::persistGameProfileConfig
-            )
-        }) { aiProfileRevision += 1 }
+        scheduleAiProfileApply(
+            scope, selectedGameForMemory, aiProfileProposal,
+            aiProfileProposalStore, viewModel::persistGameProfileConfig
+        ) { aiProfileRevision += 1 }
     }
 
     fun rollbackAiProfileProposal() {
-        val packageName = selectedGameForMemory ?: return
-        val rollback = aiProfileRollbackState ?: return
-        launchAiProfileMutation(scope, "rollback", mutation = {
-            aiProfileProposalStore.rollbackIfCurrent(
-                packageName, rollback.version, viewModel::persistGameProfileConfig
-            )
-        }) { aiProfileRevision += 1 }
+        scheduleAiProfileRollback(
+            scope, selectedGameForMemory, aiProfileRollbackState,
+            aiProfileProposalStore, viewModel::persistGameProfileConfig
+        ) { aiProfileRevision += 1 }
     }
 
     fun endGameSession() {
