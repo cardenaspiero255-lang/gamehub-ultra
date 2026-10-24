@@ -6,7 +6,7 @@
 const {createHash}=require('node:crypto');
 const REPO='cardenaspiero255-lang/gamehub-ultra';
 const OWNER='cardenaspiero255-lang';
-const MAIN='e86ac7df81ee55139babba862fc538de630943f6';
+const BASELINE_MAIN='e86ac7df81ee55139babba862fc538de630943f6';
 const HEAD='de00af3776be9e0f21ba6e35d96ae0ef6030fda3';
 const SOURCE='.github/workflows/android.yml';
 const TEST='.github/scripts/test-sentry-release-auth-fallback.py';
@@ -28,10 +28,10 @@ function exactMaskDiff(before,after){
  if(after.split(ASSIGN+MASK).length!==3)return false;
  return after.replaceAll(MASK,'')===before;
 }
-function verifyPr(pr){
+function verifyPr(pr, trustedMain){
  return pr?.number===221&&pr.state==='open'&&pr.changed_files===2&&
  pr.user?.login===OWNER&&pr.user?.id===322222186&&pr.user?.type==='User'&&
- pr.author_association==='OWNER'&&pr.head?.sha===HEAD&&pr.base?.sha===MAIN&&
+ pr.author_association==='OWNER'&&pr.head?.sha===HEAD&&pr.base?.sha===trustedMain&&
  pr.head?.repo?.full_name===REPO&&pr.base?.repo?.full_name===REPO&&
  pr.base?.ref==='main';
 }
@@ -68,12 +68,13 @@ async function attestExactPr221({github,owner,repo}={}){
   };
   const original=(await github.rest.pulls.get({owner,repo,pull_number:221})).data;
   if(original?.number!==221)return notApplicable();
-  if(!verifyPr(original)||await getMain()!==MAIN)return incomplete();
+  const mainSha=await getMain();
+  if(!/^[a-f0-9]{40}$/.test(mainSha||'')||!verifyPr(original,mainSha))return incomplete();
   const files=(await github.rest.pulls.listFiles({owner,repo,pull_number:221,per_page:100,page:1})).data;
   if(!verifyFiles(files))return incomplete();
   const sources=new Map();
   for(const [path,sha] of PINNED){
-   for(const [label,commit] of [['base',MAIN],['head',HEAD]]){
+   for(const [label,commit] of [['base',mainSha],['head',HEAD]]){
     const response=(await github.rest.repos.getContent({owner,repo,path,ref:commit})).data;
     const bytes=verifiedBlob(response,sha[label]);
     if(bytes===null)return incomplete();
@@ -82,11 +83,11 @@ async function attestExactPr221({github,owner,repo}={}){
   }
   if(!exactMaskDiff(sources.get('base:'+SOURCE),sources.get('head:'+SOURCE)))return incomplete();
   const final=(await github.rest.pulls.get({owner,repo,pull_number:221})).data;
-  if(!verifyPr(final)||await getMain()!==MAIN)return incomplete();
+  if(!verifyPr(final,mainSha)||await getMain()!==mainSha)return incomplete();
   return Object.freeze({status:'AUTHENTICATED_EXACT_DELTA_MANUAL_REVIEW_REQUIRED',
-   headSha:HEAD,mainSha:MAIN,changedFiles:2,maskInsertions:2,
+   headSha:HEAD,mainSha,baselineMainSha:BASELINE_MAIN,changedFiles:2,maskInsertions:2,
    provenanceAuthenticated:true,manualReviewRequired:true,
    autoApproveAllowed:false,autoMergeAllowed:false});
  }catch(_){return incomplete();}
 }
-module.exports={attestExactPr221,exactMaskDiff,verifiedBlob};
+module.exports={attestExactPr221,exactMaskDiff,verifiedBlob,verifyPr};
