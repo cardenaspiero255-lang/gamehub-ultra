@@ -12,11 +12,11 @@ Two previously distinct original GameHub fault mechanisms are exercised along on
 ## Test contract
 
 - `AiProfileProposalMonotonicVersionRegressionTest` (Robolectric): RED/GREEN regression for the monotonic proposal checkpoint, with per-game isolation and forward progress.
-- `GameHubRollbackPersistenceE2ETest` (Android instrumented on isolated API-35 emulator): real Android SessionCoach persistent sample store, production GameHub selection repository with explicit/adaptive selection policy, DataStore profile persistence, SharedPreferences adaptive optimizer and proposal rollback, a deliberately failing performance-event persistence attempt, a new optimizer/store instance, and MainActivity startup. Assert one replay event, no stranded pending decision, correct rollback target, and no stale-version overwrite.
+- `GameHubRollbackPersistenceE2ETest` (Android instrumented on isolated API-35 emulator): real Android SessionCoach persistent sample store, production GameHub selection repository with explicit/adaptive selection policy, DataStore profile persistence, SharedPreferences adaptive optimizer and proposal rollback, a deliberately failing performance-event persistence attempt, a new optimizer/store instance, and MainActivity startup (no real OS process kill). Assert one replay event, no stranded pending decision, correct rollback target, and no stale-version overwrite.
 
 The E2E deliberately injects a failure at the production event-persistence boundary to make replay deterministic. This is **a real persistence integration E2E**, not a physical-device trial or a test of tapping the exact UI buttons. It must not be described as either.
 
-Run with existing `.github/workflows/android.yml`: JVM regression is selected by deterministic unit-test sharding, while the `device-validation-ui` shard runs `gradle :app:connectedDebugAndroidTest` on API-35 emulator. The workflow **must fail closed** unless the connected-device JUnit XML contains exactly one passing, non-skipped `GameHubRollbackPersistenceE2ETest#sessionReplayAndStaleProposalNeverCorruptRollbackAfterAppRestart` case. On success, CI publishes `gamehub-car29-android-e2e-receipt` with the workflow SHA and SHA-256 of its source XML (not raw device traces). Green checks without this proof are insufficient.
+Run with existing `.github/workflows/android.yml`: JVM regression is selected by deterministic unit-test sharding, while the `device-validation-ui` shard runs `gradle :app:connectedDebugAndroidTest` on API-35 emulator. The protected Android workflow still runs `connectedDebugAndroidTest` on API 35; **it does not publish an exact per-test JUnit receipt**. A workflow modification to add such a gate was intentionally reverted because the existing CAR-29 independent reviewers blocked changing `.github/workflows/android.yml`. Before certifying this E2E, inspect the exact `app/build/outputs/androidTest-results/connected/**/TEST-*.xml` for one passing, non-skipped `GameHubRollbackPersistenceE2ETest#sessionReplayAndStaleProposalNeverCorruptRollbackAfterAppRestart` test and retain a provenance-bound receipt through an approved workflow change. Green CI alone remains insufficient.
 
 ## Prior Ultra Sentinel experimental evidence (no GOLD promotion)
 
@@ -33,7 +33,7 @@ Both sources are historical *development* defects; the result does **not** estab
 - An equal-version callback cannot overwrite the previously approved target.
 - An equal-version delayed callback cannot **resurrect** the rollback after explicit user removal. The persistent version remains monotonic.
 - `AiProfileProposalStore.recordApplied` uses one process-wide checkpoint lock so different store objects cannot interleave the version read and write.
-- The Android E2E interleaves the stale proposal with an outstanding adaptive replay and checks one persisted event after a recovered restart.
+- The Android E2E interleaves the stale proposal with an outstanding adaptive replay and checks one persisted event after dependency recreation; it does **not** kill and restart the Android process.
 
 ## Safety and reporting
 
