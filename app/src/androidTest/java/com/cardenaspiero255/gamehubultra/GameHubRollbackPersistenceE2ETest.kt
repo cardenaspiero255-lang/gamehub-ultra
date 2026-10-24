@@ -75,20 +75,9 @@ class GameHubRollbackPersistenceE2ETest {
             reasons = listOf("E2E approved"),
             disabledSettings = emptyList()
         )
-        var applyCount = 0
-        assertTrue(
-            applyAiProfileProposalForSelectedGame(
-                packageName = packageName,
-                proposal = approved,
-                save = { game, config, onSaved ->
-                    runBlocking { selection.saveGameProfileConfig(game, config) }
-                    onSaved()
-                },
-                recordApplied = proposals::recordApplied,
-                onApplied = { applyCount++ }
-            )
-        )
-        assertEquals(1, applyCount)
+        assertTrue(proposals.applyProposal(
+            packageName, approved, selection::saveGameProfileConfig
+        ))
         assertEquals(PerformanceProfile.X4, selection.profileForGameFlow(packageName).first())
         assertEquals(4, proposals.rollbackState(packageName)?.version)
 
@@ -139,15 +128,18 @@ class GameHubRollbackPersistenceE2ETest {
 
         // The delayed proposal arrives while the adaptive retry is still pending,
         // not after the two mechanisms have already finished independently.
-        AiProfileProposalStore(context).recordApplied(
+        assertFalse(AiProfileProposalStore(context).applyProposal(
             packageName,
             approved.copy(
                 version = 3,
                 previousKnownGoodConfig = GameProfileConfig(
                     performanceProfile = PerformanceProfile.X4
-                )
-            )
-        )
+                ),
+                proposedConfig = GameProfileConfig(performanceProfile = PerformanceProfile.BALANCED)
+            ),
+            selection::saveGameProfileConfig
+        ))
+        assertEquals(PerformanceProfile.X4, selection.profileForGameFlow(packageName).first())
         assertEquals(4, AiProfileProposalStore(context).rollbackState(packageName)?.version)
         assertEquals(
             PerformanceProfile.BALANCED,
@@ -198,24 +190,15 @@ class GameHubRollbackPersistenceE2ETest {
         )
         assertEquals(5, stable.nextVersion(packageName))
 
-        var rollbackCount = 0
-        assertTrue(
-            rollbackAiProfileProposalForSelectedGame(
-                packageName = packageName,
-                rollback = stable.rollbackState(packageName),
-                save = { game, config, onSaved ->
-                    runBlocking { selection.saveGameProfileConfig(game, config) }
-                    onSaved()
-                },
-                clearRollback = stable::clearRollback,
-                onRolledBack = { rollbackCount++ }
-            )
-        )
-        assertEquals(1, rollbackCount)
+        assertTrue(stable.rollbackIfCurrent(
+            packageName, expectedVersion = 4, persist = selection::saveGameProfileConfig
+        ))
         assertNull(AiProfileProposalStore(context).rollbackState(packageName))
         assertEquals(PerformanceProfile.BALANCED, selection.profileForGameFlow(packageName).first())
         // A duplicate callback for the cleared version cannot resurrect user rollback.
-        AiProfileProposalStore(context).recordApplied(packageName, approved)
+        assertFalse(AiProfileProposalStore(context).applyProposal(
+            packageName, approved, selection::saveGameProfileConfig
+        ))
         assertNull(AiProfileProposalStore(context).rollbackState(packageName))
         assertEquals(5, AiProfileProposalStore(context).nextVersion(packageName))
 
