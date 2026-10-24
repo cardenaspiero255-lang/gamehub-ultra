@@ -9,6 +9,9 @@ import com.cardenaspiero255.gamehubultra.domain.ResolutionTarget
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
 import java.nio.charset.StandardCharsets
 import java.util.Base64
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 
 data class AppliedAiProfileProposalState(
@@ -43,13 +46,13 @@ class AiProfileProposalStore(context: Context) {
             if (proposal.version <= preferences.getInt(versionKey(cleanPackage), 0)) {
                 return
             }
-            preferences.edit()
+            check(preferences.edit()
                 .putInt(versionKey(cleanPackage), proposal.version)
                 .putString(
                     rollbackKey(cleanPackage),
                     encodeConfig(proposal.previousKnownGoodConfig)
                 )
-                .apply()
+                .commit()) { "AI rollback checkpoint was not durably written" }
         }
     }
 
@@ -83,8 +86,7 @@ class AiProfileProposalStore(context: Context) {
             ) {
                 return@synchronized false
             }
-            preferences.edit().remove(rollbackKey(cleanPackage)).apply()
-            true
+            preferences.edit().remove(rollbackKey(cleanPackage)).commit()
         }
 
     /**
@@ -107,8 +109,22 @@ class AiProfileProposalStore(context: Context) {
             }
             if (!allowed) return false
             persist(cleanPackage, proposal.proposedConfig)
-            // Production approval/rollback calls all hold MUTATION_MUTEX.
-            recordApplied(cleanPackage, proposal)
+            // SharedPreferences.apply() alone does not prove a checkpoint
+            // survived an OS process restart; commit on the IO dispatcher.
+            try {
+                withContext(Dispatchers.IO) { recordApplied(cleanPackage, proposal) }
+            } catch (checkpointFailure: Exception) {
+                // If the checkpoint fails, do not leave an un-rollbackable
+                // active profile from this user approval.
+                try {
+                    withContext(NonCancellable) {
+                        persist(cleanPackage, proposal.previousKnownGoodConfig)
+                    }
+                } catch (restoreFailure: Throwable) {
+                    checkpointFailure.addSuppressed(restoreFailure)
+                }
+                throw checkpointFailure
+            }
             return true
         } finally {
             MUTATION_MUTEX.unlock()
@@ -132,7 +148,9 @@ class AiProfileProposalStore(context: Context) {
                 ?.takeIf { it.version == expectedVersion }
                 ?: return false
             persist(cleanPackage, current.previousKnownGoodConfig)
-            return clearRollbackIfCurrent(cleanPackage, expectedVersion)
+            return withContext(Dispatchers.IO) {
+                clearRollbackIfCurrent(cleanPackage, expectedVersion)
+            }
         } finally {
             MUTATION_MUTEX.unlock()
         }
