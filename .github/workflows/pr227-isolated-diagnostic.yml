@@ -12,7 +12,7 @@ jobs:
       - name: Checkout pinned candidate in unprivileged environment
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: c2e994521306eadf4d83d86cf690682eb409774d
+          ref: b32b0f03d00157fb44341f3d445b629e14149e74
           persist-credentials: false
       - name: Install locked AST parser without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "c2e994521306eadf4d83d86cf690682eb409774d"
+          test "$(git rev-parse HEAD)" = "b32b0f03d00157fb44341f3d445b629e14149e74"
           node --check .github/scripts/ultra_sentinel_pr221_stage2.cjs
           node --test .github/scripts/pr221_stage2.test.cjs .github/scripts/ultra_sentinel_pr172_scope.test.cjs
           node - <<'JS'
