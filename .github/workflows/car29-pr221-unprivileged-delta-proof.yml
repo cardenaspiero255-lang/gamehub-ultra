@@ -1,0 +1,73 @@
+name: CAR-29 PR221 unprivileged exact-delta proof
+'on':
+  push:
+    branches: [ci/car29-pr221-exact-delta-proof-20261024]
+permissions:
+  contents: read
+jobs:
+  prove:
+    name: Read-only pinned PR221 regression and exact main diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      TARGET_SHA: 1ab89a13b0e7a9a2fcda410b41cd5a274685d7cf
+      BASE_SHA: bf717b264c45e94105fad98f5a102859e1619c4b
+    steps:
+      - name: Read exact PR221 code, not untrusted evidence branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: 1ab89a13b0e7a9a2fcda410b41cd5a274685d7cf
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Execute existing regression and independently compare all workflow bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          python3 .github/scripts/test-sentry-release-auth-fallback.py -v
+          mkdir -p /tmp/car29-review
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          target = os.environ["TARGET_SHA"]
+          base = os.environ["BASE_SHA"]
+          path = ".github/workflows/android.yml"
+          current = Path(path).read_bytes()
+          original = subprocess.check_output(["git", "show", base + ":" + path])
+          mask = b'          echo "::add-mask::$PASSWORD"\n'
+          assignment = b'          PASSWORD="$(openssl rand -hex 24)"\n'
+          assert current.count(mask) == 2, "Expected exactly two protected masks"
+          assert original.count(mask) == 0, "Trusted base unexpectedly masked"
+          assert original.count(assignment) == 2, "Expected two signing-password blocks"
+          assert current.count(assignment + mask) == 2, "Masks must immediately follow password creation"
+          assert current.replace(mask, b"") == original, "Unexpected protected workflow edits"
+
+          receipt = {
+              "kind": "CAR29_PR221_READ_ONLY_EXACT_DELTA",
+              "scope": "advisory evidence only; not an authorization or trusted status check",
+              "sourceGitSha": target,
+              "trustedBaseSha": base,
+              "sourceWorkflowSha256": hashlib.sha256(current).hexdigest(),
+              "trustedWorkflowSha256": hashlib.sha256(original).hexdigest(),
+              "maskCount": 2,
+              "onlyTwoMaskInsertions": True,
+              "regression": "python3 .github/scripts/test-sentry-release-auth-fallback.py -v",
+              "verified": True
+          }
+          p = Path("/tmp/car29-review/PR221-advisory-delta-receipt.json")
+          p.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n")
+          print("PR221 advisory scoped delta PASS; protected reviewer approvals remain mandatory.")
+          PY
+      - name: Upload advisory exact-delta receipt
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: car29-pr221-readonly-delta
+          path: /tmp/car29-review/
+          if-no-files-found: warn
+          retention-days: 14
