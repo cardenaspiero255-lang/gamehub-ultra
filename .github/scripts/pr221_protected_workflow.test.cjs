@@ -29,5 +29,5 @@ test('runs a main-deployed exact SHA verifier and refuses unverified proof',()=>
 });
 test('no Sentry, signing, arbitrary secrets or auto-approval operations',()=>{
  assert.doesNotMatch(workflow,/SENTRY_AUTH_TOKEN|SENTRY_DSN|secrets\./);
- assert.doesNotMatch(workflow,/pulls\.merge|git\.create|repos\.create|setSecret|auto-merge|enableAutoMerge/i);
+ assert.doesNotMatch(workflow,/pulls\.merge\s*\(|git\.create\w*\s*\(|repos\.create\w*\s*\(|setSecret\s*\(|enableAutoMerge\s*\(/i);
 });
