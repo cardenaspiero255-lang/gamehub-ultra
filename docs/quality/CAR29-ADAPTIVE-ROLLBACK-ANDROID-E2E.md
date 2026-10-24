@@ -24,7 +24,9 @@ For an *authorized, isolated emulator* with one connected ADB device, run from t
 bash scripts/car29-verify-android-e2e.sh
 ```
 
-The script enforces exactly one passing, non-skipped JUnit testcase; computes a SHA-256 for that JUnit XML and the instrumentation logs; builds a durable fixture with real Android repositories; `am force-stop`s the app; checks that the old app process is gone; cold-launches MainActivity; and invokes the exact same instrumentation test in a **separate verify phase** to re-read the original persisted session/profile/rollback without rewriting the fixture. The JSON receipt contains the exact Git commit SHA. The driver refuses physical phones and multiple devices.
+The script enforces exactly one passing, non-skipped JUnit testcase; computes a SHA-256 for that JUnit XML and the instrumentation logs; builds a durable fixture with real Android repositories; starts MainActivity and records a live PID **before** `am force-stop`; checks that the old app process is gone; cold-launches MainActivity; and requires a **different nonempty PID** afterwards. It then invokes the exact same instrumentation test in a **separate verify phase** to re-read the original persisted session/profile/rollback without rewriting the fixture. The JSON receipt binds the exact Git commit SHA, both observed process PIDs, and hashes of the pre-stop/restart/instrumentation logs. The driver refuses physical phones and multiple devices.
+
+The isolated, non-device regression can be executed with `python3 -m unittest discover -s scripts/tests -p 'test_car29_android_restart.py'`. It reproduces the earlier false-positive PID-reuse path (RED) and verifies that the corrected driver rejects it (GREEN); it does **not** certify a real Android process restart.
 
 **Evidence status:** This reproducible two-phase driver has been added but has **not** been executed on an emulator by the authoring environment. Until its receipt is genuinely produced, verified, and independently reconciled with CI, the true cold-start E2E is **not certified**. This script does not change CAR-29 workflows, and does not imply physical-device certification.
 
