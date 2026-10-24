@@ -12,11 +12,21 @@ Two previously distinct original GameHub fault mechanisms are exercised along on
 ## Test contract
 
 - `AiProfileProposalMonotonicVersionRegressionTest` (Robolectric): RED/GREEN regression for the monotonic proposal checkpoint, with per-game isolation and forward progress.
-- `GameHubRollbackPersistenceE2ETest` (Android instrumented on isolated API-35 emulator): real Android SessionCoach persistent sample store, production GameHub selection repository with explicit/adaptive selection policy, DataStore profile persistence, SharedPreferences adaptive optimizer and proposal rollback, a deliberately failing performance-event persistence attempt, a new optimizer/store instance, and MainActivity startup (no real OS process kill). Assert one replay event, no stranded pending decision, correct rollback target, and no stale-version overwrite.
+- `GameHubRollbackPersistenceE2ETest` (Android instrumented on isolated API-35 emulator): real Android SessionCoach persistent sample store, production GameHub selection repository with explicit/adaptive selection policy, DataStore profile persistence, SharedPreferences adaptive optimizer and proposal rollback, a deliberately failing performance-event persistence attempt, a new optimizer/store instance, and MainActivity startup (no process kill in the default CI run). Assert one replay event, no stranded pending decision, correct rollback target, and no stale-version overwrite.
 
 The E2E deliberately injects a failure at the production event-persistence boundary to make replay deterministic. This is **a real persistence integration E2E**, not a physical-device trial or a test of tapping the exact UI buttons. It must not be described as either.
 
-Run with existing `.github/workflows/android.yml`: JVM regression is selected by deterministic unit-test sharding, while the `device-validation-ui` shard runs `gradle :app:connectedDebugAndroidTest` on API-35 emulator. The protected Android workflow still runs `connectedDebugAndroidTest` on API 35; **it does not publish an exact per-test JUnit receipt**. A workflow modification to add such a gate was intentionally reverted because the existing CAR-29 independent reviewers blocked changing `.github/workflows/android.yml`. Before certifying this E2E, inspect the exact `app/build/outputs/androidTest-results/connected/**/TEST-*.xml` for one passing, non-skipped `GameHubRollbackPersistenceE2ETest#sessionReplayAndStaleProposalNeverCorruptRollbackAfterAppRestart` test and retain a provenance-bound receipt through an approved workflow change. Green CI alone remains insufficient.
+Run with existing `.github/workflows/android.yml`: JVM regression is selected by deterministic unit-test sharding, while the `device-validation-ui` shard runs `gradle :app:connectedDebugAndroidTest` on API-35 emulator. The protected workflow still **does not upload per-test JUnit XML**; changing it on this PR failed existing CAR-29 security review and was reverted.
+
+For an *authorized, isolated emulator* with one connected ADB device, run from the repository root:
+
+```bash
+bash scripts/car29-verify-android-e2e.sh
+```
+
+The script enforces exactly one passing, non-skipped JUnit testcase; computes a SHA-256 for that JUnit XML and the instrumentation logs; builds a durable fixture with real Android repositories; `am force-stop`s the app; checks that the old app process is gone; cold-launches MainActivity; and invokes the exact same instrumentation test in a **separate verify phase** to re-read the original persisted session/profile/rollback without rewriting the fixture. The JSON receipt contains the exact Git commit SHA. The driver refuses physical phones and multiple devices.
+
+**Evidence status:** This reproducible two-phase driver has been added but has **not** been executed on an emulator by the authoring environment. Until its receipt is genuinely produced, verified, and independently reconciled with CI, the true cold-start E2E is **not certified**. This script does not change CAR-29 workflows, and does not imply physical-device certification.
 
 ## Prior Ultra Sentinel experimental evidence (no GOLD promotion)
 
@@ -27,13 +37,21 @@ Run with existing `.github/workflows/android.yml`: JVM regression is selected by
 
 Both sources are historical *development* defects; the result does **not** establish two independent causal families, a new external GOLD truth label, detector precision, recall, F1 or SSS+ certification.
 
+## Production approval and rollback transaction
+
+- `AiProfileProposalStore.applyProposal` rejects stale or repeated versions **before** calling the suspend DataStore writer, and commits the version/rollback checkpoint only after the write returns successfully.
+- `AiProfileProposalStore.rollbackIfCurrent` re-checks the expected durable version under the same process-wide coroutine mutex, awaits the profile restore, then clears only a matching version.
+- Both mutation entry points are now used by the actual `GameHubUltraApp` Compose callbacks through `GameHubViewModel.persistGameProfileConfig`; the earlier callback-based helper is retained for legacy unit tests but is not used by production UI.
+- `AiProfileTransactionalMutationTest` covers rejected stale active writes, failed saves, outdated rollback clear, and a suspended write concurrent with an old rollback from another instance.
+- Limit: DataStore and SharedPreferences are separate persistence engines; the mutation mutex guarantees **in-process ordering**, not a crash-atomic multi-store transaction.
+
 ## Additional version-fence regressions
 
 - Lower-version callbacks cannot rewind the applied version or rollback target.
 - An equal-version callback cannot overwrite the previously approved target.
 - An equal-version delayed callback cannot **resurrect** the rollback after explicit user removal. The persistent version remains monotonic.
 - `AiProfileProposalStore.recordApplied` uses one process-wide checkpoint lock so different store objects cannot interleave the version read and write.
-- The Android E2E interleaves the stale proposal with an outstanding adaptive replay and checks one persisted event after dependency recreation; it does **not** kill and restart the Android process.
+- The default Android E2E interleaves the stale proposal with an outstanding adaptive replay and checks one persisted event after dependency recreation. The optional two-phase ADB driver adds the actual OS process force-stop/start boundary and reads the same original session from a new process.
 
 ## Safety and reporting
 
