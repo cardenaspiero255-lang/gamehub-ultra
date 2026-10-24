@@ -1,0 +1,21 @@
+name: Sentry release integrity offline regression
+'on':
+  push:
+    branches: [fix/sentry-release-readback-failclosed-20261024]
+permissions:
+  contents: read
+jobs:
+  offline-adversarial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout unprivileged branch without credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Python unit tests — no Sentry secrets or external API
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s .github/scripts -p 'test-sentry-release-integrity.py' -v
+          python3 -m unittest discover -s .github/scripts -p 'test-sentry-release-auth-fallback.py' -v
