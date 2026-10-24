@@ -65,4 +65,38 @@ class AiProfileProposalMonotonicVersionRegressionTest {
             store.rollbackState("game.alpha")?.previousKnownGoodConfig?.performanceProfile
         )
     }
+    @Test
+    fun duplicateSameVersionCannotRewriteApprovedRollback() {
+        val approved = AiProfileProposalStore(context)
+        approved.recordApplied("game.alpha", proposal(4, PerformanceProfile.BALANCED))
+
+        // A delayed callback with the same identity may carry stale rollback data.
+        AiProfileProposalStore(context).recordApplied(
+            "game.alpha", proposal(4, PerformanceProfile.X4)
+        )
+
+        val reopened = AiProfileProposalStore(context)
+        assertEquals(4, reopened.rollbackState("game.alpha")?.version)
+        assertEquals(
+            PerformanceProfile.BALANCED,
+            reopened.rollbackState("game.alpha")?.previousKnownGoodConfig?.performanceProfile
+        )
+    }
+
+    @Test
+    fun callbackFromClearedVersionCannotResurrectUserRollback() {
+        val original = AiProfileProposalStore(context)
+        original.recordApplied("game.alpha", proposal(7, PerformanceProfile.BALANCED))
+        original.clearRollback("game.alpha")
+
+        // Clearing removes the rollback target but must keep the version fence.
+        AiProfileProposalStore(context).recordApplied(
+            "game.alpha", proposal(7, PerformanceProfile.X4)
+        )
+
+        val reopened = AiProfileProposalStore(context)
+        assertEquals(null, reopened.rollbackState("game.alpha"))
+        assertEquals(8, reopened.nextVersion("game.alpha"))
+    }
+
 }
