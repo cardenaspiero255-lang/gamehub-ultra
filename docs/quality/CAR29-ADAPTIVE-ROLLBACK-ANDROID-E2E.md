@@ -16,15 +16,24 @@ Two previously distinct original GameHub fault mechanisms are exercised along on
 
 The E2E deliberately injects a failure at the production event-persistence boundary to make replay deterministic. This is **a real persistence integration E2E**, not a physical-device trial or a test of tapping the exact UI buttons. It must not be described as either.
 
-Run with existing `.github/workflows/android.yml`: JVM regression is selected by deterministic unit-test sharding, while the `device-validation-ui` shard runs `gradle :app:connectedDebugAndroidTest` on API-35 emulator. The only acceptable success proof is a JUnit XML containing the E2E test class and the complete test result, plus green required branch checks.
+Run with existing `.github/workflows/android.yml`: JVM regression is selected by deterministic unit-test sharding, while the `device-validation-ui` shard runs `gradle :app:connectedDebugAndroidTest` on API-35 emulator. The workflow **must fail closed** unless the connected-device JUnit XML contains exactly one passing, non-skipped `GameHubRollbackPersistenceE2ETest#sessionReplayAndStaleProposalNeverCorruptRollbackAfterAppRestart` case. On success, CI publishes `gamehub-car29-android-e2e-receipt` with the workflow SHA and SHA-256 of its source XML (not raw device traces). Green checks without this proof are insufficient.
 
 ## Prior Ultra Sentinel experimental evidence (no GOLD promotion)
 
 - [Ultra Sentinel PR #209](https://github.com/cardenaspiero255-lang/Ultra-Sentinel/pull/209): original source-Kotlin rollback #153:71 × #152:41; six JVM variants with mutant-sensitive benign #153:69.
 - [Original Kotlin run 39952600537](https://github.com/cardenaspiero255-lang/Ultra-Sentinel/actions/runs/39952600537): owner artifact `12501326370`, ZIP SHA-256 `0cc4fdcb3c672ddfe6f6aeba35fd63cff5a909f79b1105aa9d7c34cb1532c910`.
-- The original experiment paired **separate** JVM processes and did not demonstrate the production data path; that is why the Android E2E is necessary.
+- [Ultra Sentinel PR #215](https://github.com/cardenaspiero255-lang/Ultra-Sentinel/pull/215): subsequent **shared-JVM** 2×2 experiment with original Kotlin modules, test-only ABI bridge, and a modeled shared rollback state; [run 40025122655](https://github.com/cardenaspiero255-lang/Ultra-Sentinel/actions/runs/40025122655). It is stronger than #209, but still NOT an Android production call graph.
+- The Android E2E deliberately delivers a stale version *while adaptive replay remains pending*, then reopens the app stores and resumes. It tests production persistence interoperability and its invariant, not all four original/repaired variants in a production Android 2×2 factorial design.
 
 Both sources are historical *development* defects; the result does **not** establish two independent causal families, a new external GOLD truth label, detector precision, recall, F1 or SSS+ certification.
+
+## Additional version-fence regressions
+
+- Lower-version callbacks cannot rewind the applied version or rollback target.
+- An equal-version callback cannot overwrite the previously approved target.
+- An equal-version delayed callback cannot **resurrect** the rollback after explicit user removal. The persistent version remains monotonic.
+- `AiProfileProposalStore.recordApplied` uses one process-wide checkpoint lock so different store objects cannot interleave the version read and write.
+- The Android E2E interleaves the stale proposal with an outstanding adaptive replay and checks one persisted event after a recovered restart.
 
 ## Safety and reporting
 
