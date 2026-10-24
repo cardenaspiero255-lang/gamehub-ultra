@@ -12,7 +12,7 @@ jobs:
       - name: Checkout candidate SHA in unprivileged runner without secrets
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: 8dd9a05e8c4a61ad597b5951b48904e863d3eff1
+          ref: 3920d542b5a5719c81701e65b521ba8e996737fa
           persist-credentials: false
       - name: Install JS AST parser without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "8dd9a05e8c4a61ad597b5951b48904e863d3eff1"
+          test "$(git rev-parse HEAD)" = "3920d542b5a5719c81701e65b521ba8e996737fa"
           node --test .github/scripts/pr221_protected_workflow.test.cjs
           node - <<'JS'
           const fs=require('node:fs');
