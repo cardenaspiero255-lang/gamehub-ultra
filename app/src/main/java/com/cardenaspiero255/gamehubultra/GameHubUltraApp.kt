@@ -111,6 +111,25 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Runs the same persistence transaction used by the UI, independently testable
+ * without a Compose Activity. A declined/stale mutation must not refresh UI.
+ */
+internal fun launchAiProfileMutation(
+    scope: kotlinx.coroutines.CoroutineScope,
+    operation: String,
+    mutation: suspend () -> Boolean,
+    onChanged: () -> Unit
+): kotlinx.coroutines.Job = scope.launch {
+    try {
+        if (mutation()) onChanged()
+    } catch (cancel: kotlinx.coroutines.CancellationException) {
+        throw cancel
+    } catch (error: Exception) {
+        android.util.Log.w("GameHubUltraApp", "AI profile ${operation} failed", error)
+    }
+}
+
 private const val MAX_CHAT_HISTORY = 8
 private const val COACH_RUNTIME_START_TOLERANCE_MS = 5_000L
 
@@ -571,39 +590,21 @@ internal fun GameHubUltraApp(
     fun applyAiProfileProposal() {
         val packageName = selectedGameForMemory ?: return
         val proposal = aiProfileProposal ?: return
-        scope.launch {
-            try {
-                if (aiProfileProposalStore.applyProposal(
-                        packageName, proposal, viewModel::persistGameProfileConfig
-                    )
-                ) {
-                    aiProfileRevision += 1
-                }
-            } catch (cancel: kotlinx.coroutines.CancellationException) {
-                throw cancel
-            } catch (error: Exception) {
-                android.util.Log.w("GameHubUltraApp", "AI profile apply failed", error)
-            }
-        }
+        launchAiProfileMutation(scope, "apply", mutation = {
+            aiProfileProposalStore.applyProposal(
+                packageName, proposal, viewModel::persistGameProfileConfig
+            )
+        }) { aiProfileRevision += 1 }
     }
 
     fun rollbackAiProfileProposal() {
         val packageName = selectedGameForMemory ?: return
         val rollback = aiProfileRollbackState ?: return
-        scope.launch {
-            try {
-                if (aiProfileProposalStore.rollbackIfCurrent(
-                        packageName, rollback.version, viewModel::persistGameProfileConfig
-                    )
-                ) {
-                    aiProfileRevision += 1
-                }
-            } catch (cancel: kotlinx.coroutines.CancellationException) {
-                throw cancel
-            } catch (error: Exception) {
-                android.util.Log.w("GameHubUltraApp", "AI profile rollback failed", error)
-            }
-        }
+        launchAiProfileMutation(scope, "rollback", mutation = {
+            aiProfileProposalStore.rollbackIfCurrent(
+                packageName, rollback.version, viewModel::persistGameProfileConfig
+            )
+        }) { aiProfileRevision += 1 }
     }
 
     fun endGameSession() {
