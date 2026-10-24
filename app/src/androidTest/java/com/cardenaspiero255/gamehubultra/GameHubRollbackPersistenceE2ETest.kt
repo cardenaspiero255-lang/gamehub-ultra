@@ -173,15 +173,18 @@ class GameHubRollbackPersistenceE2ETest {
 
         // #152:41 — an older asynchronous proposal must never replace the approved
         // newer version or its known-good rollback destination.
-        AiProfileProposalStore(context).recordApplied(
+        assertFalse(AiProfileProposalStore(context).applyProposal(
             packageName,
             approved.copy(
                 version = 3,
                 previousKnownGoodConfig = GameProfileConfig(
                     performanceProfile = PerformanceProfile.X4
-                )
-            )
-        )
+                ),
+                proposedConfig = GameProfileConfig(performanceProfile = PerformanceProfile.X4)
+            ),
+            selection::saveGameProfileConfig
+        ))
+        assertEquals(PerformanceProfile.BALANCED, selection.profileForGameFlow(packageName).first())
         val stable = AiProfileProposalStore(context)
         assertEquals(4, stable.rollbackState(packageName)?.version)
         assertEquals(
