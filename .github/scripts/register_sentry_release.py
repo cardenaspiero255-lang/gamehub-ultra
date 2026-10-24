@@ -90,14 +90,15 @@ def api_request(path_or_url, *, method="GET", payload=None, include_headers=Fals
                 return data, dict(response.headers.items())
             return data
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
+        # Sentry's HTTP error bodies are untrusted. Never echo them into Actions
+        # logs: they could reflect authorization tokens or private event data.
         if exc.code in (401, 403):
             raise SentryAuthRejected(
                 f"Sentry API rejected the configured auth token with HTTP {exc.code}."
             ) from exc
         raise RuntimeError(
-            f"Sentry API returned HTTP {exc.code} for {urllib.parse.urlparse(url).path}: "
-            f"{detail[:1000]}"
+            f"Sentry API returned HTTP {exc.code} for its release operation. "
+            "Registration has not been verified."
         ) from exc
 
 
@@ -244,9 +245,40 @@ try:
 except SentryAuthRejected as exc:
     blocked_auth(exc)
 
-commit_count = release.get("commitCount", 0) if isinstance(release, dict) else 0
+# A 2xx response to POST alone cannot attest the stored release. Re-read the
+# exact version, scoped to the intended project, before emitting a success log.
+if not isinstance(release, dict) or release.get("version") != RELEASE:
+    raise SystemExit(
+        "Sentry release creation did not confirm the requested version; "
+        "release registration remains unverified."
+    )
+
+readback_path = (
+    f"/organizations/{urllib.parse.quote(org_slug, safe='')}/releases/"
+    f"{urllib.parse.quote(RELEASE, safe='')}/"
+    f"?project={urllib.parse.quote(project_slug, safe='')}"
+)
+try:
+    persisted = api_request(readback_path)
+except SentryAuthRejected as exc:
+    blocked_auth(exc)
+
+if not (
+    isinstance(persisted, dict)
+    and persisted.get("version") == RELEASE
+    and isinstance(persisted.get("projects"), list)
+    and any(
+        isinstance(item, dict) and item.get("slug") == project_slug
+        for item in persisted["projects"]
+    )
+):
+    raise SystemExit(
+        "Sentry release read-back did not confirm the exact release/project; "
+        "registration remains unverified."
+    )
+
 notice(
-    f"Registered Sentry release {RELEASE} for project {project_slug}; "
-    f"GitHub commit linking={'enabled' if repo_linked else 'not confirmed'}, "
-    f"commitCount={commit_count}."
+    f"Read-back verified Sentry release {RELEASE} for project {project_slug}; "
+    f"GitHub repository link={'confirmed' if repo_linked else 'not confirmed'}. "
+    "This is release registration evidence, not Sentry event-delivery E2E."
 )
