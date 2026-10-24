@@ -128,6 +128,17 @@ class GameHubViewModel(
         }
     }
 
+    /**
+     * Called only through the version-serialized AI proposal transaction.
+     * Await persistence before updating the rollback checkpoint.
+     */
+    suspend fun persistGameProfileConfig(
+        packageName: String,
+        config: GameProfileConfig
+    ) {
+        repository.saveGameProfileConfig(packageName, config)
+    }
+
     suspend fun persistGameProfile(
         packageName: String,
         profile: PerformanceProfile
