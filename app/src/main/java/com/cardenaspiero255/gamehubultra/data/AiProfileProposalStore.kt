@@ -9,6 +9,7 @@ import com.cardenaspiero255.gamehubultra.domain.ResolutionTarget
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
 import java.nio.charset.StandardCharsets
 import java.util.Base64
+import kotlinx.coroutines.sync.Mutex
 
 data class AppliedAiProfileProposalState(
     val version: Int,
@@ -21,15 +22,12 @@ class AiProfileProposalStore(context: Context) {
         Context.MODE_PRIVATE
     )
 
-    @Synchronized
-    fun nextVersion(packageName: String): Int {
+    fun nextVersion(packageName: String): Int = synchronized(STORE_LOCK) {
         val cleanPackage = packageName.trim()
-        if (cleanPackage.isEmpty()) return 1
-        return (preferences.getInt(versionKey(cleanPackage), 0) + 1)
-            .coerceAtLeast(1)
+        if (cleanPackage.isEmpty()) return@synchronized 1
+        (preferences.getInt(versionKey(cleanPackage), 0) + 1).coerceAtLeast(1)
     }
 
-    @Synchronized
     fun recordApplied(
         packageName: String,
         proposal: AiProfileProposal
@@ -55,28 +53,89 @@ class AiProfileProposalStore(context: Context) {
         }
     }
 
-    @Synchronized
-    fun rollbackState(packageName: String): AppliedAiProfileProposalState? {
+    fun rollbackState(packageName: String): AppliedAiProfileProposalState? =
+        synchronized(STORE_LOCK) {
+            val cleanPackage = packageName.trim()
+            if (cleanPackage.isEmpty()) return@synchronized null
+            val version = preferences.getInt(versionKey(cleanPackage), 0)
+            if (version <= 0) return@synchronized null
+            val encoded = preferences.getString(rollbackKey(cleanPackage), null)
+                ?: return@synchronized null
+            val previous = decodeConfig(encoded) ?: return@synchronized null
+            AppliedAiProfileProposalState(version, previous)
+        }
+
+    // Legacy/diagnostic API. Production UI uses rollbackIfCurrent with the
+    // exact snapshot version and a serialized profile write.
+    fun clearRollback(packageName: String) = synchronized(STORE_LOCK) {
         val cleanPackage = packageName.trim()
-        if (cleanPackage.isEmpty()) return null
-        val version = preferences.getInt(versionKey(cleanPackage), 0)
-        if (version <= 0) return null
-        val encoded = preferences.getString(rollbackKey(cleanPackage), null)
-            ?: return null
-        val previous = decodeConfig(encoded) ?: return null
-        return AppliedAiProfileProposalState(
-            version = version,
-            previousKnownGoodConfig = previous
-        )
+        if (cleanPackage.isNotEmpty()) {
+            preferences.edit().remove(rollbackKey(cleanPackage)).apply()
+        }
     }
 
-    @Synchronized
-    fun clearRollback(packageName: String) {
+    fun clearRollbackIfCurrent(packageName: String, expectedVersion: Int): Boolean =
+        synchronized(STORE_LOCK) {
+            val cleanPackage = packageName.trim()
+            if (cleanPackage.isEmpty() || expectedVersion <= 0 ||
+                preferences.getInt(versionKey(cleanPackage), 0) != expectedVersion ||
+                !preferences.contains(rollbackKey(cleanPackage))
+            ) {
+                return@synchronized false
+            }
+            preferences.edit().remove(rollbackKey(cleanPackage)).apply()
+            true
+        }
+
+    /**
+     * Serializes production approval across store instances. Rejects stale
+     * versions BEFORE touching the active DataStore profile. No callback can
+     * apply/rollback another version until this persistence step completes.
+     */
+    suspend fun applyProposal(
+        packageName: String,
+        proposal: AiProfileProposal,
+        persist: suspend (String, GameProfileConfig) -> Unit
+    ): Boolean {
         val cleanPackage = packageName.trim()
-        if (cleanPackage.isEmpty()) return
-        preferences.edit()
-            .remove(rollbackKey(cleanPackage))
-            .apply()
+        require(cleanPackage.isNotEmpty()) { "packageName must not be blank" }
+        require(proposal.version > 0) { "proposal version must be positive" }
+        MUTATION_MUTEX.lock()
+        try {
+            val allowed = synchronized(STORE_LOCK) {
+                proposal.version > preferences.getInt(versionKey(cleanPackage), 0)
+            }
+            if (!allowed) return false
+            persist(cleanPackage, proposal.proposedConfig)
+            // Production approval/rollback calls all hold MUTATION_MUTEX.
+            recordApplied(cleanPackage, proposal)
+            return true
+        } finally {
+            MUTATION_MUTEX.unlock()
+        }
+    }
+
+    /**
+     * Reads the durable rollback checkpoint AFTER acquiring the same mutation
+     * mutex; a stale UI snapshot cannot restore or clear a newer version.
+     */
+    suspend fun rollbackIfCurrent(
+        packageName: String,
+        expectedVersion: Int,
+        persist: suspend (String, GameProfileConfig) -> Unit
+    ): Boolean {
+        val cleanPackage = packageName.trim()
+        if (cleanPackage.isEmpty() || expectedVersion <= 0) return false
+        MUTATION_MUTEX.lock()
+        try {
+            val current = rollbackState(cleanPackage)
+                ?.takeIf { it.version == expectedVersion }
+                ?: return false
+            persist(cleanPackage, current.previousKnownGoodConfig)
+            return clearRollbackIfCurrent(cleanPackage, expectedVersion)
+        } finally {
+            MUTATION_MUTEX.unlock()
+        }
     }
 
     private fun versionKey(packageName: String): String =
@@ -124,5 +183,6 @@ class AiProfileProposalStore(context: Context) {
     private companion object {
         const val PREFERENCES_NAME = "gamehub_ultra_ai_profile_builder"
         private val STORE_LOCK = Any()
+        private val MUTATION_MUTEX = Mutex()
     }
 }
