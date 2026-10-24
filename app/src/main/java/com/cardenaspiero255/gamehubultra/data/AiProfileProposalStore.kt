@@ -38,19 +38,21 @@ class AiProfileProposalStore(context: Context) {
         require(cleanPackage.isNotEmpty()) { "packageName must not be blank" }
         require(proposal.version > 0) { "proposal version must be positive" }
 
-        // A delayed callback from an older proposal must not rewind the
-        // persisted rollback checkpoint for a newer user-approved version.
-        if (proposal.version < preferences.getInt(versionKey(cleanPackage), 0)) {
-            return
+        // Strictly monotonic: repeated callbacks (including the just-cleared
+        // version) cannot overwrite or resurrect a previously approved rollback.
+        // A companion-level lock serializes writers from different store instances.
+        synchronized(STORE_LOCK) {
+            if (proposal.version <= preferences.getInt(versionKey(cleanPackage), 0)) {
+                return
+            }
+            preferences.edit()
+                .putInt(versionKey(cleanPackage), proposal.version)
+                .putString(
+                    rollbackKey(cleanPackage),
+                    encodeConfig(proposal.previousKnownGoodConfig)
+                )
+                .apply()
         }
-
-        preferences.edit()
-            .putInt(versionKey(cleanPackage), proposal.version)
-            .putString(
-                rollbackKey(cleanPackage),
-                encodeConfig(proposal.previousKnownGoodConfig)
-            )
-            .apply()
     }
 
     @Synchronized
@@ -121,5 +123,6 @@ class AiProfileProposalStore(context: Context) {
 
     private companion object {
         const val PREFERENCES_NAME = "gamehub_ultra_ai_profile_builder"
+        private val STORE_LOCK = Any()
     }
 }
