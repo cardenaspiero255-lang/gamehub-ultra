@@ -17,5 +17,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest discover -s .github/scripts -p 'test-sentry-release-integrity.py' -v
-          python3 -m unittest discover -s .github/scripts -p 'test-sentry-release-auth-fallback.py' -v
+          python3 .github/scripts/test-sentry-release-integrity.py -v
+          python3 .github/scripts/test-sentry-release-auth-fallback.py -v
