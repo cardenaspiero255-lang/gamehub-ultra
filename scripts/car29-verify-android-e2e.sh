@@ -12,6 +12,8 @@ mkdir -p "$OUT_DIR"
 command -v adb >/dev/null || { echo "Android platform-tools adb is required" >&2; exit 2; }
 command -v gradle >/dev/null || { echo "Gradle (same as Android CI workflow) is required" >&2; exit 2; }
 command -v python3 >/dev/null || { echo "Python 3 is required" >&2; exit 2; }
+# Local RED/GREEN contract suite (no device access) before producing any receipt.
+python3 -m unittest discover -s scripts/tests -p 'test_car29_android_restart.py'
 
 if [ "$(adb devices | sed -n '/device$/p' | wc -l | tr -d ' ')" -ne 1 ]; then
   echo "Exactly one authorized emulator must be connected" >&2
@@ -57,6 +59,14 @@ if ! grep -Eq 'OK \(1 test\)' "$OUT_DIR/prepare-instrumentation.log" ||
 fi
 
 echo "CAR29: force-stopping Android process and restarting the real activity"
+# Obtain a live-process baseline: testing only that a PID appears after launch
+# is insufficient proof of a force-stop / process restart.
+adb shell am start -W -n "$PACKAGE/.MainActivity" | tee "$OUT_DIR/pre-restart-activity.log"
+PRE_STOP_PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r')"
+if [ -z "$PRE_STOP_PID" ]; then
+  echo "Target activity had no live process before force-stop" >&2
+  exit 1
+fi
 adb shell am force-stop "$PACKAGE"
 if [ -n "$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r')" ]; then
   echo "Target process survived force-stop" >&2
@@ -66,6 +76,10 @@ adb shell am start -W -n "$PACKAGE/.MainActivity" | tee "$OUT_DIR/restart-activi
 COLD_PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r')"
 if [ -z "$COLD_PID" ]; then
   echo "Target activity failed to start a new Android process" >&2
+  exit 1
+fi
+if [ "$COLD_PID" = "$PRE_STOP_PID" ]; then
+  echo "Cannot certify cold restart: the post-start PID equals the pre-stop PID" >&2
   exit 1
 fi
 
@@ -78,14 +92,16 @@ if ! grep -Eq 'OK \(1 test\)' "$OUT_DIR/verify-instrumentation.log" ||
   exit 1
 fi
 
-python3 - "$COMMIT" "$OUT_DIR" <<'PY'
+python3 - "$COMMIT" "$OUT_DIR" "$PRE_STOP_PID" "$COLD_PID" <<'PY'
 import hashlib
 import json
 import pathlib
 import sys
 import xml.etree.ElementTree as ET
 
-commit, output = sys.argv[1:]
+commit, output, pre_pid, cold_pid = sys.argv[1:]
+if not pre_pid.isdecimal() or not cold_pid.isdecimal() or pre_pid == cold_pid:
+    raise SystemExit("CAR29 cold-restart process identity proof is missing or invalid")
 out = pathlib.Path(output)
 root = pathlib.Path("app/build/outputs/androidTest-results")
 classname = "com.cardenaspiero255.gamehubultra.GameHubRollbackPersistenceE2ETest"
@@ -102,7 +118,7 @@ path, case = cases[0]
 if any(case.find(tag) is not None for tag in ("skipped", "failure", "error")):
     raise SystemExit("CAR29 exact JUnit result failed or skipped")
 checks = {}
-for name in ("prepare-instrumentation.log", "verify-instrumentation.log", "restart-activity.log"):
+for name in ("prepare-instrumentation.log", "verify-instrumentation.log", "pre-restart-activity.log", "restart-activity.log"):
     checks[name] = hashlib.sha256((out / name).read_bytes()).hexdigest()
 receipt = {
     "schema": "gamehub.car29.android.e2e.v1",
@@ -110,6 +126,8 @@ receipt = {
     "junitTest": classname + "#" + method,
     "junitSha256": hashlib.sha256(path.read_bytes()).hexdigest(),
     "phaseLogSha256": checks,
+    "processBeforeForceStopPid": int(pre_pid),
+    "processAfterColdStartPid": int(cold_pid),
     "androidForceStopAndColdStart": True,
     "persistentSessionReplayAndRollbackVerifiedAfterColdStart": True,
     "result": "PASS",
