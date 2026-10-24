@@ -1,0 +1,32 @@
+name: CAR29 PR226 isolated protected workflow validation
+on:
+  push:
+    branches: [ci/car29-pr226-diagnostic-20261024]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout candidate SHA in unprivileged runner without secrets
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: 8dd9a05e8c4a61ad597b5951b48904e863d3eff1
+          persist-credentials: false
+      - name: Install JS AST parser without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run protected-workflow contracts and independent YAML AST
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "8dd9a05e8c4a61ad597b5951b48904e863d3eff1"
+          node --test .github/scripts/pr221_protected_workflow.test.cjs
+          node - <<'JS'
+          const fs=require('node:fs');
+          const {inspectWorkflow}=require('./.github/scripts/ultra_sentinel_yaml_ast.cjs');
+          const p='.github/workflows/ultra-sentinel-pr221-protected.yml';
+          const c=inspectWorkflow(fs.readFileSync(p,'utf8'),{path:p,trustedRepository:'cardenaspiero255-lang/gamehub-ultra'});
+          console.log(JSON.stringify({status:c.status,coverage:c.coverage,findings:c.findings},null,2));
+          if(c.status!=='NO_RISK_PATTERN')process.exitCode=3;
+          JS
