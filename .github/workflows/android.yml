@@ -879,6 +879,54 @@ jobs:
                 --configuration-cache \
                 --configuration-cache-problems=fail \
                 --stacktrace
+
+              # A green Gradle exit does not prove this particular E2E ran:
+              # locate its exact connected-device JUnit result, reject skips
+              # and persist a source-SHA-bound digest without raw device logs.
+              python3 - <<'CAR29_E2E_PROOF'
+              from hashlib import sha256
+              from pathlib import Path
+              import json
+              import os
+              import xml.etree.ElementTree as ET
+
+              expected_class = (
+                  "com.cardenaspiero255.gamehubultra."
+                  "GameHubRollbackPersistenceE2ETest"
+              )
+              expected_method = (
+                  "sessionReplayAndStaleProposalNeverCorruptRollbackAfterAppRestart"
+              )
+              root = Path("app/build/outputs/androidTest-results")
+              reports = sorted(root.rglob("TEST-*.xml"))
+              if not reports:
+                  raise SystemExit("CAR29_E2E_JUNIT_MISSING")
+
+              matches = []
+              for report in reports:
+                  suite = ET.parse(report).getroot()
+                  for testcase in suite.iter("testcase"):
+                      if (testcase.get("classname") == expected_class
+                              and testcase.get("name") == expected_method):
+                          matches.append((report, testcase))
+              if len(matches) != 1:
+                  raise SystemExit(f"CAR29_E2E_NOT_EXACTLY_ONCE: {len(matches)}")
+              report, testcase = matches[0]
+              if any(testcase.find(tag) is not None
+                     for tag in ("skipped", "failure", "error")):
+                  raise SystemExit("CAR29_E2E_NOT_PASSED")
+
+              receipt = {
+                  "schema": "gamehub-car29-android-e2e-receipt/v1",
+                  "test": f"{expected_class}#{expected_method}",
+                  "result": "PASS",
+                  "workflowSha": os.environ["GITHUB_SHA"],
+                  "junitSha256": sha256(report.read_bytes()).hexdigest(),
+              }
+              output = Path(os.environ["RUNNER_TEMP"]) / "car29-e2e-receipt.json"
+              output.write_text(json.dumps(receipt, sort_keys=True) + "\n")
+              print("CAR29_E2E_PROOF PASS " + receipt["junitSha256"])
+              CAR29_E2E_PROOF
               ;;
             baseline|macro-*)
               # Every matrix runner owns exactly one logical benchmark.
@@ -989,6 +1037,15 @@ jobs:
               done
               ;;
           esac
+
+      - name: Archive CAR-29 exact Android JUnit proof
+        if: ${{ matrix.shard == 'ui' && success() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-car29-android-e2e-receipt
+          path: ${{ runner.temp }}/car29-e2e-receipt.json
+          retention-days: 30
+          if-no-files-found: error
 
       - name: Record Phase 3 artifact provenance
         if: matrix.shard == 'ui'
