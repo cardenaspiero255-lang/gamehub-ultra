@@ -73,8 +73,10 @@ async function attestExactPr221({github,owner,repo}={}){
   const files=(await github.rest.pulls.listFiles({owner,repo,pull_number:221,per_page:100,page:1})).data;
   if(!verifyFiles(files))return incomplete();
   const sources=new Map();
-  for(const [path,sha] of PINNED){
-   for(const [label,commit] of [['base',mainSha],['head',HEAD]]){
+  for(const path of [SOURCE,TEST]){
+   const sha=PINNED.get(path);
+   for(const label of ['base','head']){
+    const commit=label==='base'?mainSha:HEAD;
     const response=(await github.rest.repos.getContent({owner,repo,path,ref:commit})).data;
     const bytes=verifiedBlob(response,sha[label]);
     if(bytes===null)return incomplete();
