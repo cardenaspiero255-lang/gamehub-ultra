@@ -42,6 +42,8 @@ test('refuses incomplete, duplicate, pending, and invalid-run provenance',()=>{
  assert.throws(()=>latest([run(),run()]),/DUPLICATE_RUN_ID/);
  assert.throws(()=>latest([run({status:'in_progress',conclusion:null})]));
  assert.throws(()=>latest([run({run_started_at:'not-a-time'})]));
+ const ambiguous=run({id:124,run_attempt:2,run_started_at:'2026-10-24T22:30:00Z'});
+ assert.throws(()=>latest([run(),ambiguous]),/AMBIGUOUS_RUN_ORDER/);
  assert.throws(()=>latestProtectedRun({total_count:2,workflow_runs:[run()]},ID,HEAD,MAIN));
 });
 test('protected job must be the sole exact completed success',()=>{
