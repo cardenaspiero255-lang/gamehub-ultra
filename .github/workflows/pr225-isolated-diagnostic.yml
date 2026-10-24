@@ -1,0 +1,39 @@
+name: PR225 isolated unprivileged syntax and contract diagnostics
+on:
+  push:
+    branches: [ci/car29-pr225-diagnostic-20261024]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout exact untrusted candidate in unprivileged sandbox
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: cbbfaa1204a08bb8c2e710e5d4d9c2172a787dd7
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install dependencies without scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Diagnose pinned JS AST and run isolated contract suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "cbbfaa1204a08bb8c2e710e5d4d9c2172a787dd7"
+          node --check .github/scripts/ultra_sentinel_pr221_scope.cjs
+          node --test .github/scripts/pr221_scope.test.cjs
+          node - <<'JS'
+          const fs=require('node:fs');
+          const acorn=require('acorn');
+          const s=fs.readFileSync('.github/scripts/ultra_sentinel_pr221_scope.cjs','utf8');
+          let ast;
+          try {ast=acorn.parse(s,{ecmaVersion:'latest',sourceType:'script',locations:true,ranges:true,allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true});console.log('ACORN_PARSED');}
+          catch(e){console.error('ACORN_FAILURE',e.name,String(e.message).slice(0,180));process.exitCode=2;}
+          if(ast)try {
+            const {findCapabilities}=require('./.github/scripts/ultra_sentinel_capabilities.cjs');
+            const caps=findCapabilities(ast);
+            console.log('CAPABILITY_ANALYSIS',caps.length,caps.slice(0,5).map(x=>x.rule||x.type||'unknown'));
+          }catch(e){console.error('CAPABILITY_FAILURE',e.name,String(e.message).slice(0,180));process.exitCode=3;}
+          JS
