@@ -136,4 +136,61 @@ class UltraF9BackgroundGameLaunchTest {
             dispatcher.launch("com.example.notinstalled")
         )
     }
+    @Test
+    fun backgroundLaunchVoiceAcknowledgementsNeverClaimGameWasOpened() {
+        val expected = mapOf(
+            UltraBackgroundGameLaunchOutcome.TAP_REQUIRED to
+                "Recibí la orden. Android no me permite abrir ese juego directamente desde otra aplicación. Toca la notificación para abrirlo.",
+            UltraBackgroundGameLaunchOutcome.NOTIFICATION_PERMISSION_REQUIRED to
+                "Recibí la orden, pero Android restringe la apertura desde segundo plano y las notificaciones están desactivadas. Actívalas o permite la apertura manos libres desde ajustes de Ultra.",
+            UltraBackgroundGameLaunchOutcome.FAILED to
+                "No pude entregar a Android la solicitud de apertura. Revisa las notificaciones y vuelve a intentarlo.",
+            UltraBackgroundGameLaunchOutcome.NOT_INSTALLED to
+                "Android no encontró una actividad de inicio para el juego solicitado."
+        )
+        expected.forEach { (outcome, text) ->
+            assertEquals(
+                text,
+                UltraBackgroundGameLaunchFeedback.response(
+                    outcome = outcome,
+                    openedGameLabel = "Brawl Stars",
+                    ordinaryResult = { error("A launch failure must not claim a game opened") }
+                ),
+                "Outcome $outcome"
+            )
+        }
+    }
+
+    @Test
+    fun requestedLaunchDescribesOnlyARequestNotObservedActivity() {
+        assertEquals(
+            "Envié a Android la solicitud de abrir Brawl Stars.",
+            UltraBackgroundGameLaunchFeedback.response(
+                outcome = UltraBackgroundGameLaunchOutcome.REQUESTED,
+                openedGameLabel = "Brawl Stars",
+                ordinaryResult = { error("Do not speak a different success message") }
+            )
+        )
+        assertEquals(
+            "Acción solicitada",
+            UltraBackgroundGameLaunchFeedback.response(
+                outcome = UltraBackgroundGameLaunchOutcome.REQUESTED,
+                openedGameLabel = null,
+                ordinaryResult = { "Acción solicitada" }
+            )
+        )
+    }
+
+    @Test
+    fun ordinaryVoiceCommandsUseTheirOwnFeedbackWithoutSpoofingLaunch() {
+        assertEquals(
+            "Modo competitivo activado",
+            UltraBackgroundGameLaunchFeedback.response(
+                outcome = null,
+                openedGameLabel = null,
+                ordinaryResult = { "Modo competitivo activado" }
+            )
+        )
+    }
+
 }

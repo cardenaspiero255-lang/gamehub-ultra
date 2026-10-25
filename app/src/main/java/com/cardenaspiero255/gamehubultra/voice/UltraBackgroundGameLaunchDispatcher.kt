@@ -42,6 +42,38 @@ internal enum class UltraBackgroundGameLaunchOutcome {
     FAILED
 }
 
+
+/**
+ * Speech must describe the Android dispatch result, not claim that the
+ * foreground activity was observed. Keep user-visible outcomes testable
+ * without booting a game or bypassing Android background-launch policy.
+ */
+internal object UltraBackgroundGameLaunchFeedback {
+    fun response(
+        outcome: UltraBackgroundGameLaunchOutcome?,
+        openedGameLabel: String?,
+        ordinaryResult: () -> String
+    ): String = when (outcome) {
+        UltraBackgroundGameLaunchOutcome.TAP_REQUIRED ->
+            "Recibí la orden. Android no me permite abrir ese juego " +
+                "directamente desde otra aplicación. Toca la notificación para abrirlo."
+        UltraBackgroundGameLaunchOutcome.NOTIFICATION_PERMISSION_REQUIRED ->
+            "Recibí la orden, pero Android restringe la apertura desde " +
+                "segundo plano y las notificaciones están desactivadas. " +
+                "Actívalas o permite la apertura manos libres desde ajustes de Ultra."
+        UltraBackgroundGameLaunchOutcome.FAILED ->
+            "No pude entregar a Android la solicitud de apertura. " +
+                "Revisa las notificaciones y vuelve a intentarlo."
+        UltraBackgroundGameLaunchOutcome.NOT_INSTALLED ->
+            "Android no encontró una actividad de inicio para el juego solicitado."
+        UltraBackgroundGameLaunchOutcome.REQUESTED ->
+            if (openedGameLabel != null) {
+                "Envié a Android la solicitud de abrir $openedGameLabel."
+            } else ordinaryResult()
+        null -> ordinaryResult()
+    }
+}
+
 internal object UltraBackgroundGameLaunchPolicy {
     fun decide(
         appVisible: Boolean,

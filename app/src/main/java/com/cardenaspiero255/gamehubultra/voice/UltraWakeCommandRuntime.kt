@@ -240,27 +240,11 @@ internal class UltraWakeCommandRuntime(
                         com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer.apply(context, profile)
                     }
                 )
-                when (launchOutcome) {
-                    UltraBackgroundGameLaunchOutcome.TAP_REQUIRED ->
-                        "Recibí la orden. Android no me permite abrir ese juego " +
-                            "directamente desde otra aplicación. Toca la notificación para abrirlo."
-                    UltraBackgroundGameLaunchOutcome.NOTIFICATION_PERMISSION_REQUIRED ->
-                        "Recibí la orden, pero Android restringe la apertura desde " +
-                            "segundo plano y las notificaciones están desactivadas. " +
-                            "Actívalas o permite la apertura manos libres desde ajustes de Ultra."
-                    UltraBackgroundGameLaunchOutcome.FAILED ->
-                        "No pude entregar a Android la solicitud de apertura. " +
-                            "Revisa las notificaciones y vuelve a intentarlo."
-                    UltraBackgroundGameLaunchOutcome.NOT_INSTALLED ->
-                        "Android no encontró una actividad de inicio para el juego solicitado."
-                    UltraBackgroundGameLaunchOutcome.REQUESTED ->
-                        if (actionResult is VoiceActionResult.GameOpened) {
-                            "Envié a Android la solicitud de abrir ${actionResult.game.label}."
-                        } else {
-                            formatCommandResult(actionResult)
-                        }
-                    null -> formatCommandResult(actionResult)
-                }
+                UltraBackgroundGameLaunchFeedback.response(
+                    outcome = launchOutcome,
+                    openedGameLabel = (actionResult as? VoiceActionResult.GameOpened)?.game?.label,
+                    ordinaryResult = { formatCommandResult(actionResult) }
+                )
             }
         }
     }
