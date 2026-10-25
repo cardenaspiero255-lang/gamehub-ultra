@@ -166,4 +166,37 @@ class UltraF9BackgroundLaunchAndroidIntegrationTest {
         assertFalse(UltraAppVisibilityTracker.isVisible())
     }
 
+    @Test
+    fun unavailableNotificationManagerDoesNotClaimDeliverySucceeded() {
+        val missingManagerContext = Mockito.mock(android.content.Context::class.java)
+        val requestedGame = Intent(Intent.ACTION_MAIN).setPackage(packageName)
+        assertFalse(
+            UltraBackgroundGameLaunchNotification.show(
+                missingManagerContext,
+                packageName,
+                requestedGame
+            )
+        )
+    }
+
+    @Test
+    fun explicitOverlayLaunchPathRequestsActivityRatherThanPostingNotification() {
+        var starts = 0
+        var notifications = 0
+        val dispatcher = UltraBackgroundGameLaunchDispatcher(
+            launchIntentForPackage = { Intent(Intent.ACTION_MAIN).setPackage(it) },
+            visible = { false },
+            overlayAllowed = { true },
+            notificationsAllowed = { false },
+            startActivity = { starts++ },
+            postNotification = { _, _ -> notifications++; true }
+        )
+        assertEquals(
+            UltraBackgroundGameLaunchOutcome.REQUESTED,
+            dispatcher.launch(packageName)
+        )
+        assertEquals(1, starts)
+        assertEquals(0, notifications)
+    }
+
 }

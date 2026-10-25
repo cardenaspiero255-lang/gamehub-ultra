@@ -181,4 +181,41 @@ class UltraF9JuanaStopRecoveryTest {
         assertEquals(null, queue.poll())
     }
 
+    @Test
+    fun notificationStopCancelsPendingTtsBeforeAnAudioGenerationExists() {
+        val service = UltraWakeService()
+        val coordinator: UltraWakeCommandCoordinator = field(service, "commandCoordinator")
+        val generation: UltraWakeSpeechGeneration = field(service, "speechGeneration")
+        val initGate: UltraTtsInitializationGate = field(service, "speechInitGate")
+        assertTrue(coordinator.tryBeginCommand())
+        assertEquals(null, initGate.offer("Respuesta aún pendiente de inicialización"))
+        setField(service, "waitingForSpeechEngine", true)
+
+        service.onStartCommand(Intent(UltraWakeService.ACTION_STOP_SPEECH), 0, 1)
+
+        assertFalse(field<Boolean>(service, "waitingForSpeechEngine"))
+        assertFalse(coordinator.isCommandRunning())
+        assertEquals(null, generation.activeToken())
+        assertFalse(field<Boolean>(service, "stopped"))
+    }
+
+    @Test
+    fun persistentMicrophoneHandoffDoesNothingWhenThereIsNoActiveSession() {
+        val service = UltraWakeService()
+        val coordinator: UltraWakeCommandCoordinator = field(service, "commandCoordinator")
+        val recognizer = Mockito.mock(android.speech.SpeechRecognizer::class.java)
+        setField(service, "recognizer", recognizer)
+        assertTrue(coordinator.tryBeginCommand())
+
+        val handoff = UltraWakeService::class.java.getDeclaredMethod(
+            "retirePersistentCaptureBeforeSpeaking"
+        ).apply { isAccessible = true }
+        handoff.invoke(service)
+
+        Mockito.verify(recognizer, Mockito.never()).cancel()
+        Mockito.verify(recognizer, Mockito.never()).destroy()
+        assertTrue(coordinator.isCommandRunning())
+        assertFalse(field<Boolean>(service, "persistentSessionActive"))
+    }
+
 }
