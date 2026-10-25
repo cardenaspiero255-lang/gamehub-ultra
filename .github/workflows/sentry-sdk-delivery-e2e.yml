@@ -1,0 +1,91 @@
+name: GameHub Ultra trusted Sentry SDK delivery E2E
+# Never runs on pull_request, pull_request_target or untrusted code.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sentry-sdk-delivery-e2e.yml'
+permissions:
+  contents: read
+concurrency:
+  group: gamehub-sentry-trusted-e2e
+  cancel-in-progress: false
+jobs:
+  sdk-delivery:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout trusted main without persisted credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          gradle-version: '8.13'
+      - name: Build trusted Android app and opt-in instrumentation
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_RELEASE: gamehub-ultra@${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace --no-daemon
+      - name: Boot isolated API35 emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install "platforms;android-35" "system-images;android-35;google_apis;x86_64" "emulator" "platform-tools" >/dev/null
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+          echo no | avdmanager create avd --force --name gamehub-sentry-e2e --package "system-images;android-35;google_apis;x86_64" >/dev/null
+          nohup "$ANDROID_HOME/emulator/emulator" -avd gamehub-sentry-e2e -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect > "$RUNNER_TEMP/sentry-emulator.log" 2>&1 &
+          timeout 360 adb wait-for-device
+          ready=0
+          for attempt in $(seq 1 120); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" -eq 1
+          adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -Fxq 35
+      - name: Capture controlled SDK event on Android
+        id: capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          test_apk="$(find app/build/outputs/apk/androidTest/debug -type f -name '*.apk' | head -n 1)"
+          test -n "$test_apk"
+          adb install -r app/build/outputs/apk/debug/app-debug.apk >/dev/null
+          adb install -r "$test_apk" >/dev/null
+          adb logcat -c
+          adb shell am instrument -w -e class com.cardenaspiero255.gamehubultra.SentryDeliveryE2ETest -e sentry_e2e true com.cardenaspiero255.gamehubultra.test/androidx.test.runner.AndroidJUnitRunner > "$RUNNER_TEMP/sentry-instrumentation.txt"
+          grep -q '^OK (1 test)' "$RUNNER_TEMP/sentry-instrumentation.txt"
+          adb logcat -d -s GHU_SENTRY_E2E:I '*:S' > "$RUNNER_TEMP/sentry-probe-only.txt"
+          line="$(grep -E 'EVENT_ID=[a-f0-9]{32} RELEASE=gamehub-ultra@[a-f0-9]{40}' "$RUNNER_TEMP/sentry-probe-only.txt" | tail -n 1)"
+          test -n "$line"
+          expected_release="gamehub-ultra@${{ github.sha }}"
+          printf '%s\n' "$line" | grep -Fq "RELEASE=$expected_release"
+          event_id="$(printf '%s\n' "$line" | sed -nE 's/.*EVENT_ID=([a-f0-9]{32}) RELEASE=.*/\1/p')"
+          test "${#event_id}" -eq 32
+          echo "event_id=$event_id" >> "$GITHUB_OUTPUT"
+      - name: Verify exact Sentry event and release from server
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_E2E_EVENT_ID: ${{ steps.capture.outputs.event_id }}
+          SENTRY_RELEASE: gamehub-ultra@${{ github.sha }}
+        shell: bash
+        run: python3 tools/sentry_e2e_verify.py --org gamehub-ultra-1t --project gamehub-ultra
+      - name: Sanitize emulator artifacts
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/sentry-instrumentation.txt" "$RUNNER_TEMP/sentry-probe-only.txt"

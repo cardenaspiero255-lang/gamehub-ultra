@@ -30,9 +30,9 @@ class NoRedirects(urllib.request.HTTPRedirectHandler):
 def check_identity(org, project, event_id, release):
     if not SLUG.fullmatch(org) or not SLUG.fullmatch(project):
         raise VerificationError("Invalid project identity")
-    if not EVENT.fullmatch(event_id):
+    if not isinstance(event_id, str) or not EVENT.fullmatch(event_id):
         raise VerificationError("Invalid exact Sentry event ID")
-    if not RELEASE.fullmatch(release):
+    if not isinstance(release, str) or not RELEASE.fullmatch(release):
         raise VerificationError("Invalid exact gamehub-ultra release")
 
 def verify_event(org, project, event_id, release, token, *, opener=None,
@@ -91,8 +91,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--org", required=True)
     parser.add_argument("--project", required=True)
-    parser.add_argument("--event-id", required=True)
-    parser.add_argument("--release", required=True)
+    parser.add_argument("--event-id", default=os.getenv("SENTRY_E2E_EVENT_ID"))
+    parser.add_argument("--release", default=os.getenv("SENTRY_RELEASE"))
     args = parser.parse_args(argv)
     try:
         verify_event(args.org, args.project, args.event_id,
