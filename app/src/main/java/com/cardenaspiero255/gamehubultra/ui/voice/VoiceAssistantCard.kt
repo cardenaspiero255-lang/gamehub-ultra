@@ -954,8 +954,10 @@ applyNetworkProfile = networkGaming::applyProfile
                 Text(
                     "Fuera de GameHub, Android puede impedir abrir juegos " +
                         "automáticamente. En ese caso Ultra envía una " +
-                        "notificación que debes tocar. No se activa ningún " +
-                        "permiso adicional sin tu autorización.",
+                        "notificación que debes tocar. En Android 14 la apertura " +
+                        "automática opcional usa el permiso especial " +
+                        "«Mostrar sobre otras aplicaciones», que también " +
+                        "permite superposiciones. Solo se solicita si lo eliges.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -981,7 +983,7 @@ applyNetworkProfile = networkGaming::applyProfile
                                 }
                             }
                         ) {
-                            Text("Permitir apertura manos libres fuera de GameHub")
+                            Text("Conceder «Mostrar sobre otras aplicaciones» (opcional)")
                         }
                     }
                 }
