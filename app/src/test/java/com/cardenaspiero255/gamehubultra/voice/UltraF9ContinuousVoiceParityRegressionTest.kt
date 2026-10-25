@@ -1,5 +1,7 @@
 package com.cardenaspiero255.gamehubultra.voice
 
+import android.content.Intent
+import android.Manifest
 import android.os.Bundle
 import android.os.Handler
 import android.speech.RecognitionListener
@@ -15,6 +17,8 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito
+import org.robolectric.Robolectric
+import org.robolectric.Shadows
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
@@ -116,4 +120,42 @@ class UltraF9ContinuousVoiceParityRegressionTest {
         assertContains(answer, "Perfil X4 seleccionado")
         assertFalse(answer.contains("no está disponible"), answer)
     }
+    @Test
+    fun failedStopOnlyRecognizerStartupRetriesWhileSpeechIsActive() {
+        val app = RuntimeEnvironment.getApplication()
+        Shadows.shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        val controller = Robolectric.buildService(UltraWakeService::class.java)
+        val service = controller.create().get()
+        val coordinator: UltraWakeCommandCoordinator = field(service, "commandCoordinator")
+        val guard: UltraWakePlaybackGuard = field(service, "playbackGuard")
+        val handler = Mockito.mock(Handler::class.java)
+        setField(service, "mainHandler", handler)
+        val recognizer = Mockito.mock(SpeechRecognizer::class.java)
+        Mockito.doThrow(IllegalStateException("ASR busy"))
+            .`when`(recognizer).startListening(Mockito.any(Intent::class.java))
+        val speechApi = Mockito.mockStatic(SpeechRecognizer::class.java)
+        try {
+            speechApi.`when`<Boolean> { SpeechRecognizer.isRecognitionAvailable(service) }
+                .thenReturn(true)
+            speechApi.`when`<SpeechRecognizer> {
+                SpeechRecognizer.createSpeechRecognizer(service)
+            }.thenReturn(recognizer)
+            assertTrue(coordinator.tryBeginCommand())
+            guard.onPlaybackStarted("Continuo leyendo algo importante...")
+            UltraWakeService::class.java.getDeclaredMethod(
+                "startRecognition", Boolean::class.javaPrimitiveType
+            ).apply { isAccessible = true }.invoke(service, true)
+
+            assertTrue(coordinator.isCommandRunning())
+            assertFalse(coordinator.isRecognitionActive())
+            Mockito.verify(recognizer).destroy()
+            Mockito.verify(handler).postDelayed(
+                Mockito.any(Runnable::class.java), Mockito.eq(560L)
+            )
+        } finally {
+            speechApi.close()
+            controller.destroy()
+        }
+    }
+
 }
