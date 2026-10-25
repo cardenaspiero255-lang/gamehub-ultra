@@ -8,7 +8,8 @@ internal object UltraWakeRecognitionIntentFactory {
     fun create(
         languageTag: String,
         mode: UltraWakeRecognitionMode,
-        persistentSource: UltraPersistentSpeechSource?
+        persistentSource: UltraPersistentSpeechSource?,
+        wakeName: String = UltraWakeNamePolicy.DEFAULT_NAME
     ): Intent =
         Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
@@ -20,6 +21,14 @@ internal object UltraWakeRecognitionIntentFactory {
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 putExtra(RecognizerIntent.EXTRA_REQUEST_WORD_CONFIDENCE, true)
+            }
+
+            // SpeechRecognizer may ignore hints; never count them as a wake-word model.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                putStringArrayListExtra(
+                    RecognizerIntent.EXTRA_BIASING_STRINGS,
+                    arrayListOf("Ultra", wakeName)
+                )
             }
 
             if (mode == UltraWakeRecognitionMode.LEGACY_RESTARTING) {
@@ -54,10 +63,6 @@ internal object UltraWakeRecognitionIntentFactory {
                 putExtra(
                     RecognizerIntent.EXTRA_SEGMENTED_SESSION,
                     RecognizerIntent.EXTRA_AUDIO_SOURCE
-                )
-                putStringArrayListExtra(
-                    RecognizerIntent.EXTRA_BIASING_STRINGS,
-                    arrayListOf("Ultra", "ultra")
                 )
             }
         }

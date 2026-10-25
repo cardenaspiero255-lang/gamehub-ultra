@@ -8,6 +8,18 @@ object NetworkVoiceResponseText {
     fun format(result: VoiceActionResult.NetworkReport): String {
         val metrics = result.snapshot.metrics
         return when (result.request) {
+            NetworkVoiceRequest.COMPETITIVE -> when (result.optimizationOutcome) {
+                NetworkOptimizationOutcome.APPLIED ->
+                    "Modo competitivo: ACTIVO. Prioridad local de baja latencia aplicada."
+                NetworkOptimizationOutcome.LEASE_ACQUIRED_PENDING_INTERACTIVE ->
+                    "Modo competitivo: PREPARADO. Se activará cuando GameHub Ultra esté en primer plano y la pantalla activa."
+                NetworkOptimizationOutcome.RELEASED_OR_NOT_NEEDED ->
+                    "Modo competitivo: NO ACTIVADO. La red actual no necesita o no admite esta prioridad."
+                NetworkOptimizationOutcome.UNAVAILABLE ->
+                    "Modo competitivo: NO ACTIVADO. Android o la red no permiten aplicar la prioridad local."
+                NetworkOptimizationOutcome.NOT_REQUESTED ->
+                    "Modo competitivo: NO ACTIVADO. No se realizó ningún cambio."
+            }
             NetworkVoiceRequest.STATUS -> buildString {
                 append("Conexión ")
                 append(stabilityLabel(metrics.stability))

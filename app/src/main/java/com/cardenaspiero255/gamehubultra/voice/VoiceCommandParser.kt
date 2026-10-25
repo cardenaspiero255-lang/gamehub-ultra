@@ -20,6 +20,10 @@ object VoiceCommandParser {
         """^(?:desactiva|deshabilita|quita|apaga|disable|deactivate|turn off|switch off)\s+(?:(?:el|la|mi|the|my)\s+)?(?:(?:modo|perfil|mode|profile)\s+)?x4(?:\s+(?:modo|perfil|mode|profile))?$"""
     )
 
+    private val COMPETITIVE_MODE_COMMAND = Regex(
+        """^(?:activa|activar|pon|habilita|usa|enciende|enable|activate|set)\s+(?:(?:el|the)\s+)?(?:modo\s+)?competitivo$"""
+    )
+
     private val RESERVED_PROFILE_ALIASES = setOf(
         "x4",
         "balanceado",
@@ -49,6 +53,13 @@ object VoiceCommandParser {
 
         if (X4_DISABLE_COMMAND.matches(clean)) {
             return VoiceCommand.SelectProfile(PerformanceProfile.BALANCED)
+        }
+
+        // Strict, affirmative reserved controls take precedence over user
+        // game aliases and optional AI resolvers. Without this, a custom game
+        // alias could hijack "activa modo competitivo" into an app launch.
+        if (COMPETITIVE_MODE_COMMAND.matches(clean)) {
+            return VoiceCommand.Network(NetworkVoiceRequest.COMPETITIVE)
         }
 
         parseGameAliasDefinition(clean)?.let { return it }
@@ -148,6 +159,12 @@ object VoiceCommandParser {
     }
 
     private fun parseNetworkRequest(clean: String): NetworkVoiceRequest? {
+        // A competitive network mode is NOT an installed game's title.
+        // Match complete affirmative instructions only: no questions,
+        // descriptions, negations or accidental game-launch substrings.
+        if (COMPETITIVE_MODE_COMMAND.matches(clean)) {
+            return NetworkVoiceRequest.COMPETITIVE
+        }
         if (hasExplicitLaunchIntent(clean)) return null
         return when {
             clean.contains("packet loss") ||

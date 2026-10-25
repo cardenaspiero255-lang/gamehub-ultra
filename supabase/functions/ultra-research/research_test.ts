@@ -102,6 +102,59 @@ Deno.test(
   },
 );
 
+Deno.test(
+  "caramelization is described with sugar AND heat, without invented citations",
+  async () => {
+    let upstreamCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: () => {
+        upstreamCalls++;
+        throw new Error("Stable cooking knowledge must not depend on Wikidata");
+      },
+      env: () => undefined,
+    };
+    for (
+      const query of [
+        "¿Qué es caramelizar?",
+        "¿Qué significa caramelizar?",
+        "¿Qué es la caramelización?",
+      ]
+    ) {
+      const result = await routeResearchQuery(
+        query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+        "OPTIONAL",
+      );
+      const explanation = (result.displayText ?? "").toLowerCase();
+      if (
+        result.abstained ||
+        !/az[uú]car/.test(explanation) ||
+        !/calor/.test(explanation) ||
+        !/color/.test(explanation) ||
+        !/sabor/.test(explanation)
+      ) {
+        throw new Error(
+          "Incomplete or unreliable caramelization explanation: " +
+            query + " -> " + explanation,
+        );
+      }
+      if (
+        upstreamCalls !== 0 ||
+        result.authoritative ||
+        (result.independentSourceCount ?? 0) !== 0 ||
+        result.sourceId ||
+        (result.sourceIds?.length ?? 0) !== 0
+      ) {
+        throw new Error(
+          "Stable local explanation must not pretend to be verified",
+        );
+      }
+    }
+  },
+);
+
 Deno.test("Wi-Fi definitions remain complete without upstream data", async () => {
   const deps: ResearchDependencies = {
     fetcher: () => {

@@ -67,6 +67,14 @@ class UltraWakeService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val foregroundController by lazy { UltraWakeForegroundController(this) }
     private val commandCoordinator = UltraWakeCommandCoordinator()
+    private val wakeNameStore by lazy { UltraWakeNameStore(applicationContext) }
+    // Recognition callbacks may arrive while an Android Service is tearing down.
+    // Avoid reading SharedPreferences through a detached Context; the built-in
+    // name stays a safe fallback and never elevates microphone permissions.
+    private fun currentWakeName(): String =
+        runCatching { wakeNameStore.load() }
+            .getOrDefault(UltraWakeNamePolicy.DEFAULT_NAME)
+
     private val commandQueue = UltraWakeCommandQueue()
     private val voiceConversationLedger = UltraVoiceConversationLedger(maxEntries = 8)
     private val speechGeneration = UltraWakeSpeechGeneration()
@@ -244,7 +252,8 @@ class UltraWakeService : Service() {
             val intent = UltraWakeRecognitionIntentFactory.create(
                 languageTag = recognitionLanguageTag,
                 mode = requestedMode,
-                persistentSource = persistentSpeechSource
+                persistentSource = persistentSpeechSource,
+                wakeName = currentWakeName()
             )
             speech.startListening(intent)
             if (
@@ -286,6 +295,7 @@ class UltraWakeService : Service() {
             val alternatives = partialResults
                 ?.getStringArrayList(RESULTS_RECOGNITION)
                 .orEmpty()
+                .map { UltraWakeNamePolicy.canonicalizeInvocation(it, currentWakeName()) }
             if (UltraWakePartialStopPolicy.shouldStop(
                     playbackActive = playbackGuard.isPlaybackActive(),
                     alternatives = alternatives
@@ -389,7 +399,9 @@ class UltraWakeService : Service() {
                 if (interruptionOnly) {
                     // Some recognizers provide stop words only in final results.
                     // Forward stop intent to the safe partial-stop handler, not command routing.
-                    val alternatives = results?.getStringArrayList(RESULTS_RECOGNITION).orEmpty()
+                    val alternatives = results?.getStringArrayList(RESULTS_RECOGNITION)
+                        .orEmpty()
+                        .map { UltraWakeNamePolicy.canonicalizeInvocation(it, currentWakeName()) }
                     val stopRequested = UltraWakePartialStopPolicy.shouldStop(
                         playbackActive = playbackGuard.isPlaybackActive(),
                         alternatives = alternatives
@@ -435,11 +447,14 @@ class UltraWakeService : Service() {
         val confidenceScores = results
             ?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
 
-        val transcript = UltraSpeechCandidateRanker.select(
+        val candidate = UltraSpeechCandidateRanker.select(
             alternatives = alternatives,
             confidenceScores = confidenceScores,
             prefer = ::containsWakeWord
         ).orEmpty()
+        val transcript = UltraWakeNamePolicy.canonicalizeInvocation(
+            candidate, currentWakeName()
+        )
 
         when (
             UltraWakeBargeInPolicy.decide(
@@ -506,7 +521,8 @@ class UltraWakeService : Service() {
     }
 
     private fun containsWakeWord(transcript: String): Boolean =
-        UltraWakeWordMatcher.contains(transcript)
+        UltraWakeNamePolicy.isInvoked(transcript, currentWakeName()) ||
+            UltraWakeWordMatcher.contains(transcript)
 
     private val commandRuntime by lazy {
         UltraWakeCommandRuntime(
