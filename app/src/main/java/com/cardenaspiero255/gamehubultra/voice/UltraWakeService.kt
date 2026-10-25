@@ -58,10 +58,13 @@ class UltraWakeService : Service() {
     companion object {
         const val ACTION_START = "com.cardenaspiero255.gamehubultra.voice.START"
         const val ACTION_STOP = "com.cardenaspiero255.gamehubultra.voice.STOP"
+        const val ACTION_STOP_SPEECH = "com.cardenaspiero255.gamehubultra.voice.STOP_SPEECH"
         private const val RESTART_DELAY_MS = 180L
         private const val WAKE_DEBOUNCE_MS = 700L
         private const val SPEECH_INTERRUPT_LISTEN_DELAY_MS = 280L
-        private const val MAX_SPEECH_INTERRUPT_RETRIES = 3
+        // Retry for as long as the current response is playing, with a bounded
+        // delay to avoid hot loops on OEM ASR_BUSY / NO_MATCH errors.
+        private const val MAX_SPEECH_INTERRUPT_BACKOFF_SHIFT = 3
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -176,6 +179,7 @@ class UltraWakeService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> stopSelf()
+            ACTION_STOP_SPEECH -> stopCurrentSpeechAndResume()
             ACTION_START, null -> {
                 stopped = false
                 lifecycleGate.restart()
@@ -409,10 +413,12 @@ class UltraWakeService : Service() {
                     if (stopRequested) {
                         listener.onPartialResults(results)
                     }
-                    commandCoordinator.onRecognitionFinished()
-                    // A background phrase must not permanently exhaust the STOP
-                    // listening opportunity during a long spoken answer.
+                    retireSpeechInterruptionRecognizer()
+                    // A background phrase must not permanently exhaust STOP.
+                    // Replace the recognizer after each final result: some OEM
+                    // recognizers remain busy after onResults and reject reuse.
                     if (!stopRequested && playbackGuard.isPlaybackActive() && !stopped) {
+                        speechInterruptionRetryCount = 0
                         scheduleSpeechInterruptionListenerAfterDelay(
                             SPEECH_INTERRUPT_LISTEN_DELAY_MS
                         )
@@ -425,8 +431,12 @@ class UltraWakeService : Service() {
             override fun onError(error: Int) {
                 if (!isCurrent()) return
                 if (interruptionOnly) {
-                    commandCoordinator.onRecognitionFinished()
-                    scheduleSpeechInterruptionRetry()
+                    retireSpeechInterruptionRecognizer()
+                    if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                        stopSelf()
+                    } else {
+                        scheduleSpeechInterruptionRetry()
+                    }
                     return
                 }
                 listener.onError(error)
@@ -615,14 +625,30 @@ class UltraWakeService : Service() {
         scheduleSpeechInterruptionListenerAfterDelay(SPEECH_INTERRUPT_LISTEN_DELAY_MS)
 
     private fun scheduleSpeechInterruptionRetry() {
-        speechInterruptionRetryCount++
-        if (speechInterruptionRetryCount < MAX_SPEECH_INTERRUPT_RETRIES &&
-            playbackGuard.isPlaybackActive() && !stopped
-        ) {
-            scheduleSpeechInterruptionListenerAfterDelay(
-                SPEECH_INTERRUPT_LISTEN_DELAY_MS *
-                    (1L shl speechInterruptionRetryCount)
-            )
+        if (!playbackGuard.isPlaybackActive() || stopped ||
+            !commandCoordinator.isCommandRunning()
+        ) return
+        // Three consecutive failures are normal on some devices during TTS.
+        // Never permanently retire STOP for the remainder of a long answer.
+        speechInterruptionRetryCount =
+            (speechInterruptionRetryCount + 1).coerceAtMost(MAX_SPEECH_INTERRUPT_BACKOFF_SHIFT)
+        scheduleSpeechInterruptionListenerAfterDelay(
+            SPEECH_INTERRUPT_LISTEN_DELAY_MS * (1L shl speechInterruptionRetryCount)
+        )
+    }
+
+    private fun retireSpeechInterruptionRecognizer() {
+        recognitionGeneration++ // Reject callbacks from the retired instance.
+        runCatching { recognizer?.cancel() }
+        runCatching { recognizer?.destroy() }
+        recognizer = null
+        commandCoordinator.onRecognitionFinished()
+    }
+
+    private fun stopCurrentSpeechAndResume() {
+        if (cancelPendingSpeechAndResume()) return
+        stopActiveUltraSpeech(speechPlayback::stop, speechGeneration::activeToken) {
+            finishCommandAndResume(it, playbackEnded = true)
         }
     }
 
@@ -634,7 +660,7 @@ class UltraWakeService : Service() {
         // explicit consent to continuous listening and while TTS is active.
         mainHandler.removeCallbacks(listenDuringSpeech)
         if (playbackGuard.isPlaybackActive() && !persistentSessionActive &&
-            speechInterruptionRetryCount < MAX_SPEECH_INTERRUPT_RETRIES
+            commandCoordinator.isCommandRunning() && !stopped
         ) {
             mainHandler.postDelayed(listenDuringSpeech, delayMillis)
         }
