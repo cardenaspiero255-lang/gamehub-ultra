@@ -80,13 +80,10 @@ jobs:
       - name: Verify exact Sentry event and release from server
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          EVENT_ID: ${{ steps.capture.outputs.event_id }}
-          EXPECTED_RELEASE: gamehub-ultra@${{ github.sha }}
+          SENTRY_E2E_EVENT_ID: ${{ steps.capture.outputs.event_id }}
+          SENTRY_RELEASE: gamehub-ultra@${{ github.sha }}
         shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$EVENT_ID"
-          python3 tools/sentry_e2e_verify.py --org gamehub-ultra-1t --project gamehub-ultra --event-id "$EVENT_ID" --release "$EXPECTED_RELEASE"
+        run: python3 tools/sentry_e2e_verify.py --org gamehub-ultra-1t --project gamehub-ultra
       - name: Sanitize emulator artifacts
         if: always()
         shell: bash
