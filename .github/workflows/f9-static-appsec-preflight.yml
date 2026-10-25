@@ -1,0 +1,51 @@
+name: EVO V3 F9 static AppSec preflight tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/f9_security_preflight.py'
+      - 'tools/test_f9_security_preflight.py'
+      - 'tools/f9_source_audit.py'
+      - 'tools/test_f9_source_audit.py'
+      - '.github/workflows/f9-static-appsec-preflight.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/f9_security_preflight.py'
+      - 'tools/test_f9_security_preflight.py'
+      - 'tools/f9_source_audit.py'
+      - 'tools/test_f9_source_audit.py'
+      - '.github/workflows/f9-static-appsec-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  f9-static-appsec-contracts:
+    name: F9 static AppSec adversarial contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Require Python 3.11 or newer
+        shell: bash
+        run: |
+          python3 -c 'import sys; assert sys.version_info >= (3, 11)'
+      - name: Compile F9 preflight and tests
+        shell: bash
+        run: |
+          python3 -m py_compile tools/f9_security_preflight.py tools/test_f9_security_preflight.py tools/f9_source_audit.py tools/test_f9_source_audit.py
+      - name: Run fail-closed red-green/adversarial preflight suite
+        shell: bash
+        run: |
+          python3 -W error::ResourceWarning -m unittest discover \
+            -s tools -p 'test_f9_*.py' -v
+      - name: Inspect actual checked-out Android manifest, release config and CI signing
+        shell: bash
+        run: |
+          python3 tools/f9_source_audit.py --root . --channel internal-debug --report "$RUNNER_TEMP/f9-source-audit.json"
