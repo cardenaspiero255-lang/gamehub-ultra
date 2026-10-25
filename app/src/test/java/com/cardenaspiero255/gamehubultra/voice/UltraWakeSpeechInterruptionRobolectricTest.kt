@@ -289,4 +289,46 @@ class UltraWakeSpeechInterruptionRobolectricTest {
         assertTrue(queue.poll() == null, "Interrupt-only ASR must never queue actions")
         assertFalse(coordinator.isRecognitionActive())
     }
+    @Test
+    fun missingAndroidSpeechRecognizerSchedulesBothNormalAndStopOnlyRecovery() {
+        val app = RuntimeEnvironment.getApplication()
+        Shadows.shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        val controller = Robolectric.buildService(UltraWakeService::class.java)
+        val service = controller.create().get()
+        val handler = Mockito.mock(android.os.Handler::class.java)
+        UltraWakeService::class.java.getDeclaredField("mainHandler")
+            .apply { isAccessible = true }.set(service, handler)
+        val coordinator: UltraWakeCommandCoordinator = field(service, "commandCoordinator")
+        val guard: UltraWakePlaybackGuard = field(service, "playbackGuard")
+        val start = UltraWakeService::class.java.getDeclaredMethod(
+            "startRecognition", Boolean::class.javaPrimitiveType
+        ).apply { isAccessible = true }
+        val speechApi = Mockito.mockStatic(SpeechRecognizer::class.java)
+        try {
+            // With a mocked platform service, the unavailable-recognizer query
+            // returns false. Test the real recovery policy and scheduled work.
+            start.invoke(service, false)
+            val restart: Runnable = field(service, "restartRecognition")
+            Mockito.verify(handler).postDelayed(
+                Mockito.eq(restart),
+                Mockito.anyLong()
+            )
+            assertFalse(coordinator.isRecognitionActive())
+
+            assertTrue(coordinator.tryBeginCommand())
+            guard.onPlaybackStarted("La respuesta todavía se está reproduciendo.")
+            start.invoke(service, true)
+            val listenDuringSpeech: Runnable = field(service, "listenDuringSpeech")
+            Mockito.verify(handler).postDelayed(
+                Mockito.eq(listenDuringSpeech),
+                Mockito.eq(560L)
+            )
+            assertTrue(coordinator.isCommandRunning())
+            assertFalse(coordinator.isRecognitionActive())
+        } finally {
+            speechApi.close()
+            controller.destroy()
+        }
+    }
+
 }
