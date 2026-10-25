@@ -157,6 +157,13 @@ test('both reviewers reattest the same run immediately before making an exceptio
   const post=text.lastIndexOf('- name: Reauthenticate scoped evidence after artifact upload');
   assert.ok(upload>=0&&post>upload,'post-upload check must be the last job step: '+file);
   const afterUpload=text.slice(post);
+  // A review event can re-run this job after the initial PR checks.
+  // Resolve the post-upload validator from the trusted workspace, not a mutable cwd.
+  assert.match(afterUpload,/process\.env\.GITHUB_WORKSPACE/);
+  assert.match(afterUpload,/path\.resolve\(trustedRoot,'\.github\/scripts\/ultra_sentinel_pr172_scope\.cjs'\)/);
+  assert.match(afterUpload,/path\.isAbsolute\(trustedRoot\)/);
+  assert.match(afterUpload,/fs\.existsSync\(scopePath\)/);
+  assert.match(afterUpload,/\[172,221\]\.includes\(report\.pr\)/);
   assert.match(afterUpload,/const current=await attestScopedPr172\(\{github,owner,repo,pr,files\}\)/);
   assert.match(afterUpload,/if\(pr\.head\.sha!==report\.sha\)/);
   assert.match(afterUpload,/if\(current\.status!=='SCOPED_AUTHENTICATED_MANUAL_REVIEW'/);
