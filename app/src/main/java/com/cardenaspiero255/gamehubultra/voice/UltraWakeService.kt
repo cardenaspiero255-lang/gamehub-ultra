@@ -156,8 +156,7 @@ class UltraWakeService : Service() {
         speechEngineFailed = !ready
         if (pending != null && waitingForSpeechEngine) {
             waitingForSpeechEngine = false
-            speechPlayback.speak(pending)
-            scheduleSpeechInterruptionListener()
+            speakWithInterruption(pending)
         } else if (!ready && waitingForSpeechEngine) {
             // No TTS is available. Complete this turn so wake recognition
             // never remains stuck waiting for a speech callback.
@@ -389,14 +388,21 @@ class UltraWakeService : Service() {
                     // Some recognizers provide stop words only in final results.
                     // Forward stop intent to the safe partial-stop handler, not command routing.
                     val alternatives = results?.getStringArrayList(RESULTS_RECOGNITION).orEmpty()
-                    if (UltraWakePartialStopPolicy.shouldStop(
-                            playbackActive = playbackGuard.isPlaybackActive(),
-                            alternatives = alternatives
-                        )
-                    ) {
+                    val stopRequested = UltraWakePartialStopPolicy.shouldStop(
+                        playbackActive = playbackGuard.isPlaybackActive(),
+                        alternatives = alternatives
+                    )
+                    if (stopRequested) {
                         listener.onPartialResults(results)
                     }
                     commandCoordinator.onRecognitionFinished()
+                    // A background phrase must not permanently exhaust the STOP
+                    // listening opportunity during a long spoken answer.
+                    if (!stopRequested && playbackGuard.isPlaybackActive() && !stopped) {
+                        scheduleSpeechInterruptionListenerAfterDelay(
+                            SPEECH_INTERRUPT_LISTEN_DELAY_MS
+                        )
+                    }
                     return
                 }
                 listener.onResults(results)
@@ -564,13 +570,34 @@ class UltraWakeService : Service() {
         val readyText = speechInitGate.offer(response)
         when {
             readyText != null -> {
-                speechPlayback.speak(readyText)
-                scheduleSpeechInterruptionListener()
+                speakWithInterruption(readyText)
             }
             speechEngineFailed -> speechPlayback.speak("")
             response.isNotBlank() -> waitingForSpeechEngine = true
             else -> speechPlayback.speak("")
         }
+    }
+
+    /**
+     * Persistent segmented recognition owns an AudioRecord and keeps its slot
+     * marked active while a command runs. Before audible TTS, hand that mic
+     * back to Android so a *separate, stop-only* recognizer can hear the user.
+     * Do not call onPersistentSessionFailure(): this is an intentional handoff.
+     */
+    private fun retirePersistentCaptureBeforeSpeaking() {
+        if (!persistentSessionActive || !commandCoordinator.isCommandRunning()) return
+        recognitionGeneration++ // Ignore late callbacks from the old segmented session.
+        runCatching { recognizer?.cancel() }
+        runCatching { recognizer?.destroy() }
+        recognizer = null
+        closePersistentSpeechSource()
+        commandCoordinator.onRecognitionFinished()
+    }
+
+    private fun speakWithInterruption(response: String) {
+        retirePersistentCaptureBeforeSpeaking()
+        speechPlayback.speak(response)
+        scheduleSpeechInterruptionListener()
     }
 
     // Keep the no-argument entry point for existing callers and Robolectric tests.
