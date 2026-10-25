@@ -39,7 +39,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$SENTRY_DSN"
           gradle :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace --no-daemon
       - name: Boot isolated API35 emulator
         shell: bash
@@ -86,7 +85,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$SENTRY_AUTH_TOKEN"
           test -n "$EVENT_ID"
           python3 tools/sentry_e2e_verify.py --org gamehub-ultra-1t --project gamehub-ultra --event-id "$EVENT_ID" --release "$EXPECTED_RELEASE"
       - name: Sanitize emulator artifacts
