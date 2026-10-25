@@ -345,18 +345,27 @@ jobs:
               path.join(process.env.RUNNER_TEMP,'ultra-sentinel-core-report','report.json'),'utf8'));
             if(report.frontier?.scopedAccepted===true){
               const stored=report.frontier.scopedProtected;
-              const scopePath=path.resolve('.github/scripts/ultra_sentinel_pr172_scope.cjs');
-              if(report.pr!==172||!fs.existsSync(scopePath)){
+              // The job's trusted checkout is in GITHUB_WORKSPACE. The event
+              // may change the step's cwd; never resolve a reviewer from cwd.
+              const trustedRoot=process.env.GITHUB_WORKSPACE;
+              const scopePath=typeof trustedRoot==='string'&&path.isAbsolute(trustedRoot)?
+                path.resolve(trustedRoot,'.github/scripts/ultra_sentinel_pr172_scope.cjs'):'';
+              // A missing trusted checkout or malformed review target must
+              // FAIL CLOSED; diagnostics reveal only booleans, never secrets.
+              if(![172,221].includes(report.pr)||!fs.existsSync(scopePath)){
+                core.warning('Trusted reviewer path check: workspace_absolute='+Boolean(scopePath)+
+                    ', module_exists='+fs.existsSync(scopePath)+
+                    ', cwd_matches_workspace='+(process.cwd()===trustedRoot));
                 core.setFailed('Post-upload attestation changed: missing trusted reviewer');return;
               }
               const {attestScopedPr172}=require(scopePath);
               const owner=context.repo.owner,repo=context.repo.repo;
-              const {data:pr}=await github.rest.pulls.get({owner,repo,pull_number:172});
+              const {data:pr}=await github.rest.pulls.get({owner,repo,pull_number:report.pr});
               if(pr.head.sha!==report.sha){
                 core.setFailed('Post-upload attestation changed: PR HEAD moved');return;
               }
               const files=await github.paginate(github.rest.pulls.listFiles,
-                {owner,repo,pull_number:172,per_page:100});
+                {owner,repo,pull_number:report.pr,per_page:100});
               const current=await attestScopedPr172({github,owner,repo,pr,files});
               if(current.status!=='SCOPED_AUTHENTICATED_MANUAL_REVIEW'||
                  stored?.status!=='SCOPED_AUTHENTICATED_MANUAL_REVIEW'){

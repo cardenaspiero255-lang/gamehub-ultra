@@ -157,6 +157,13 @@ test('both reviewers reattest the same run immediately before making an exceptio
   const post=text.lastIndexOf('- name: Reauthenticate scoped evidence after artifact upload');
   assert.ok(upload>=0&&post>upload,'post-upload check must be the last job step: '+file);
   const afterUpload=text.slice(post);
+  // A review event can re-run this job after the initial PR checks.
+  // Resolve the post-upload validator from the trusted workspace, not a mutable cwd.
+  assert.match(afterUpload,/process\.env\.GITHUB_WORKSPACE/);
+  assert.match(afterUpload,/path\.resolve\(trustedRoot,'\.github\/scripts\/ultra_sentinel_pr172_scope\.cjs'\)/);
+  assert.match(afterUpload,/path\.isAbsolute\(trustedRoot\)/);
+  assert.match(afterUpload,/fs\.existsSync\(scopePath\)/);
+  assert.match(afterUpload,/\[172,221\]\.includes\(report\.pr\)/);
   assert.match(afterUpload,/const current=await attestScopedPr172\(\{github,owner,repo,pr,files\}\)/);
   assert.match(afterUpload,/if\(pr\.head\.sha!==report\.sha\)/);
   assert.match(afterUpload,/if\(current\.status!=='SCOPED_AUTHENTICATED_MANUAL_REVIEW'/);
@@ -174,7 +181,41 @@ test('trusted-main reviewers tolerate absent not-yet-merged scope module and fai
   assert.doesNotMatch(text,/require\(path\.resolve\("\.github\/scripts\/ultra_sentinel_pr172_scope\.cjs"\)\)/);
  }
 });
-test('scoped authenticator never uses GitHub writes or dynamically executes PR code',()=>{
+test('scoped authenticator never uses GitHub writes or dynamically executes PR code',async()=>{
  const source=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_pr172_scope.cjs'),'utf8');
  assert.doesNotMatch(source,/createOrUpdate|mergePull|createReview|workflow_dispatch|child_process|eval\s*\(/i);
+ // CAR-29: main fast-forwarded after PR221 was pinned, but the PR HEAD did not move.
+ // A stale green run before the new trusted main may not authorize a review.
+ const {authenticatedMainAncestry}=require('./ultra_sentinel_pr221_scope.cjs');
+ const {latestProtectedRun}=require('./ultra_sentinel_pr221_stage2.cjs');
+ const oldBase='a'.repeat(40),currentMain='b'.repeat(40),head='c'.repeat(40);
+ const cut='2026-10-25T02:33:58Z';
+ const goodGithub={rest:{repos:{
+  compareCommits:async()=>({data:{status:'ahead',ahead_by:1,behind_by:0,
+   base_commit:{sha:oldBase},merge_base_commit:{sha:oldBase}}}),
+  getCommit:async()=>({data:{sha:currentMain,commit:{committer:{date:cut}}}})
+ }}};
+ const lineage=await authenticatedMainAncestry({github:goodGithub,owner:'cardenaspiero255-lang',
+  repo:'gamehub-ultra',recordedBaseSha:oldBase,mainSha:currentMain});
+ assert.equal(lineage.recordedBaseSha,oldBase);
+ assert.equal(lineage.minRunStartedAt,cut);
+ const mkRun=(id,when,conclusion='success')=>({id,run_attempt:1,run_started_at:when,
+  workflow_id:730221,name:'Ultra Sentinel PR221 Protected Exact Delta',
+  event:'pull_request_target',head_sha:head,
+  head_repository:{full_name:'cardenaspiero255-lang/gamehub-ultra'},
+  pull_requests:[{number:221,head:{sha:head},base:{sha:oldBase}}],
+  status:'completed',conclusion});
+ const older=mkRun(101,'2026-10-25T02:30:00Z');
+ const newer=mkRun(102,'2026-10-25T02:34:43Z');
+ const judge=runs=>latestProtectedRun({total_count:runs.length,workflow_runs:runs},
+  730221,head,oldBase,lineage.minRunStartedAt);
+ assert.throws(()=>judge([older]),/HISTORICAL_PROTECTED_RUN/);
+ assert.equal(judge([older,newer]).id,102);
+ assert.throws(()=>judge([older,newer,mkRun(103,'2026-10-25T02:35:01Z','failure')]),
+  /LATEST_PROTECTED_RUN_NOT_SUCCESS/);
+ const forged={rest:{repos:{...goodGithub.rest.repos,
+  compareCommits:async()=>({data:{status:'diverged',ahead_by:1,behind_by:1,
+   base_commit:{sha:oldBase},merge_base_commit:{sha:'d'.repeat(40)}}})}}};
+ assert.equal(await authenticatedMainAncestry({github:forged,owner:'cardenaspiero255-lang',
+  repo:'gamehub-ultra',recordedBaseSha:oldBase,mainSha:currentMain}),null);
 });
