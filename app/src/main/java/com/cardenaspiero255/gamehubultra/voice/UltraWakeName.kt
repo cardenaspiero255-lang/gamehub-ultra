@@ -75,8 +75,23 @@ internal class UltraWakeNameStore(context: Context) {
             runCatching { prefs.getString("active_name", null) }.getOrNull() ?: ""
         ) ?: UltraWakeNamePolicy.DEFAULT_NAME
 
+    /** The immediately preceding distinct, user-selected wake name, if known. */
+    fun previousName(): String? {
+        val stored = runCatching { prefs.getString("previous_name", null) }.getOrNull()
+        return stored?.let(UltraWakeNamePolicy::validate)
+            ?.takeUnless { it == load() }
+    }
+
     fun save(requested: String): Boolean {
         val safe = UltraWakeNamePolicy.validate(requested) ?: return false
-        return prefs.edit().putString("active_name", safe).commit()
+        val current = load()
+        // Repeating the same name is idempotent: don't corrupt name history.
+        if (safe == current) return true
+        // Commit both fields together before TTS confirms the change. Existing
+        // installations with only active_name remain valid with unknown history.
+        return prefs.edit()
+            .putString("previous_name", current)
+            .putString("active_name", safe)
+            .commit()
     }
 }
