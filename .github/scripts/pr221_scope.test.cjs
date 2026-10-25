@@ -68,6 +68,6 @@ test('only the two immediate mask insertions are allowed by exact comparator',()
 test('base may advance only when authenticated main SHA matches PR base, with pinned blobs',()=>{
  const {verifyPr}=require('./ultra_sentinel_pr221_scope.cjs');
  const h=harness(),pr={...h.pr,base:{...h.pr.base,sha:'f'.repeat(40)}};
- assert.equal(verifyPr(pr,'f'.repeat(40)),true);
- assert.equal(verifyPr(pr,MAIN),false);
+ assert.equal(verifyPr(pr,'f'.repeat(40),pr.head.sha),true);
+ assert.equal(verifyPr(pr,MAIN,pr.head.sha),false);
 });
