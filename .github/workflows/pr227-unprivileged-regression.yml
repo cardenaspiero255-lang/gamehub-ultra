@@ -1,0 +1,24 @@
+name: CAR29 PR227 independent unprivileged regression
+on:
+  push:
+    branches: [ci/car29-pr227-regression-20261024]
+permissions:
+  contents: read
+jobs:
+  test:
+    name: PR227 contract tests (no secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout exact candidate SHA without credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: dfd7dd8f098207397d40a5aa41151f9e065470f8
+          persist-credentials: false
+      - name: Install only locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify exact pinned SHA and run security regressions
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "dfd7dd8f098207397d40a5aa41151f9e065470f8"
+          node --test .github/scripts/pr221_stage2.test.cjs .github/scripts/pr221_scope.test.cjs .github/scripts/pr221_protected_workflow.test.cjs .github/scripts/ultra_sentinel_pr172_scope.test.cjs
