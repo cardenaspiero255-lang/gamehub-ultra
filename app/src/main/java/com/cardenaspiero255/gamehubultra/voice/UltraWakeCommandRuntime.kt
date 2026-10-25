@@ -37,15 +37,21 @@ internal class UltraWakeCommandRuntime(
     private val conversationLedger: UltraVoiceConversationLedger
 ) {
     fun execute(transcript: String): String {
-        // Renaming is a configuration command, not an AI chat or game-launch
-        // request. Persist it atomically before creating the expensive AI context.
+        val nameStore = UltraWakeNameStore(context)
+        // Rename and identity questions are local settings operations. Resolve
+        // them before initializing the AI advisor, game catalog or network.
         UltraWakeNamePolicy.requestedName(transcript)?.let { requested ->
-            return if (UltraWakeNameStore(context).save(requested)) {
+            return if (nameStore.save(requested)) {
                 "Entendido. Ahora me puedes llamar $requested."
             } else {
                 "No pude guardar ese nombre. Sigo respondiendo con mi nombre anterior."
             }
         }
+        UltraWakeIdentityAnswerPolicy.respond(
+            transcript = transcript,
+            currentName = nameStore.load(),
+            previousName = nameStore.previousName()
+        )?.let { answer -> return answer }
         val privacyEpoch = UltraPrivacyEpoch.current()
         val selectionRepository: GameSelectionStateRepository =
             GameHubProductionComposition.selectionRepository(context.applicationContext)
