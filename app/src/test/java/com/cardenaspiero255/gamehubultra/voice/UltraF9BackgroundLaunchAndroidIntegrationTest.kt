@@ -30,7 +30,7 @@ class UltraF9BackgroundLaunchAndroidIntegrationTest {
 
     @Test
     fun notificationContainsAnExplicitUserTapPendingIntentAndChannel() {
-        val app = RuntimeEnvironment.getApplication<Application>()
+        val app = RuntimeEnvironment.getApplication()
         val manager = app.getSystemService(NotificationManager::class.java)
         manager.cancelAll()
         val launch = Intent(app, MainActivity::class.java)
@@ -49,7 +49,7 @@ class UltraF9BackgroundLaunchAndroidIntegrationTest {
 
     @Test
     fun launchFactoryRequiresAnInstalledPackageBeforeAnySystemSideEffect() {
-        val app = RuntimeEnvironment.getApplication<Application>()
+        val app = RuntimeEnvironment.getApplication()
         val dispatcher = UltraBackgroundGameLaunchDispatcher.from(app)
         assertEquals(
             UltraBackgroundGameLaunchOutcome.NOT_INSTALLED,
