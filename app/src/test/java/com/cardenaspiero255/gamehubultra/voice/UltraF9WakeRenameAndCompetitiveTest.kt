@@ -92,7 +92,7 @@ class UltraF9WakeRenameAndCompetitiveTest {
     }
 
     @Test fun customWakeNameIsAnchoredAndCanonicalizesExistingCommands() {
-        assertEquals("ultra abre bs",
+        assertEquals("ultra abre BS",
             UltraWakeNamePolicy.canonicalizeInvocation("Roberto, abre BS", "roberto"))
         assertEquals("ultra para",
             UltraWakeNamePolicy.canonicalizeInvocation("Roberto, para", "roberto"))
@@ -116,4 +116,43 @@ class UltraF9WakeRenameAndCompetitiveTest {
         assertFalse(UltraWakeStopSpeakingIntent.matches(
             UltraWakeNamePolicy.canonicalizeInvocation("Roberto para que sirve X4", "roberto")))
     }
+    @Test fun defaultWakeNameDoesNotCorruptDecimalOrSymbolicMath() {
+        listOf(
+            "Ultra, convierte 2.5 kilómetros a metros",
+            "Ultra, calcula -3.5 + 1.25",
+            "Ultra, resuelve x = -2.75 / 0.5"
+        ).forEach { spoken ->
+            assertEquals(spoken, UltraWakeNamePolicy.canonicalizeInvocation(spoken, "ultra"))
+        }
+    }
+
+    @Test fun customWakeNameReplacesOnlyInvocationAndPreservesMathBody() {
+        val commands = mapOf(
+            "Juana, convierte 2.5 kilómetros a metros" to
+                "ultra convierte 2.5 kilómetros a metros",
+            "Juana calcula -3.5 + 1.25" to
+                "ultra calcula -3.5 + 1.25",
+            "Hey Juana, resuelve x = -2.75 / 0.5" to
+                "ultra resuelve x = -2.75 / 0.5",
+            "JUANA, convierte 0.25 °C" to
+                "ultra convierte 0.25 °C",
+            "Juána, calcula -0.5" to
+                "ultra calcula -0.5"
+        )
+        commands.forEach { (spoken, expected) ->
+            assertEquals(expected, UltraWakeNamePolicy.canonicalizeInvocation(spoken, "juana"))
+        }
+    }
+
+    @Test fun mentionsOfWakeNameAndUnrecognizedPrefixesDoNotRewriteMath() {
+        val commands = listOf(
+            "Mi amiga Juana calcula -3.5 + 1.25",
+            "Juan convierte 2.5 kilómetros a metros",
+            "Juana"
+        )
+        commands.forEach { spoken ->
+            assertEquals(spoken, UltraWakeNamePolicy.canonicalizeInvocation(spoken, "juana"))
+        }
+    }
+
 }
