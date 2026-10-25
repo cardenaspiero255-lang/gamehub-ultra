@@ -1,5 +1,10 @@
 package com.cardenaspiero255.gamehubultra.ui.voice
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -99,7 +104,13 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
     @Test fun enablingContinuousListeningShowsBackgroundLaunchExplanationAndOptionalPermission() {
         gateway.setEnabled(false)
         val dependencies = runtime()
-        rule.setContent { LiveCard(dependencies) }
+        rule.setContent {
+            // Match the production scrollable host: this button sits below
+            // the default Robolectric viewport and must be reachable.
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                LiveCard(dependencies)
+            }
+        }
 
         rule.onNodeWithText("Fuera de GameHub, Android puede impedir abrir juegos", substring = true)
             .assertDoesNotExist()
@@ -122,7 +133,13 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
     @Test fun disablingContinuousListeningHidesBackgroundPermissionInstructions() {
         gateway.setEnabled(true)
         val dependencies = runtime()
-        rule.setContent { LiveCard(dependencies) }
+        rule.setContent {
+            // Match the production scrollable host: this button sits below
+            // the default Robolectric viewport and must be reachable.
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                LiveCard(dependencies)
+            }
+        }
         rule.onNodeWithText("Fuera de GameHub, Android puede impedir abrir juegos", substring = true)
             .assertExists()
 
