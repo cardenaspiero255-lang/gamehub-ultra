@@ -209,7 +209,8 @@ class UltraWakeService : Service() {
 
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             commandCoordinator.onRecognitionFinished()
-            scheduleRestart(recoveryPolicy.nextDelayMillis())
+            if (interruptWindow) scheduleSpeechInterruptionRetry()
+            else scheduleRestart(recoveryPolicy.nextDelayMillis())
             return
         }
 
@@ -268,7 +269,8 @@ class UltraWakeService : Service() {
             }
             closePersistentSpeechSource()
             commandCoordinator.onRecognitionFinished()
-            scheduleRestart(recoveryPolicy.nextDelayMillis())
+            if (interruptWindow) scheduleSpeechInterruptionRetry()
+            else scheduleRestart(recoveryPolicy.nextDelayMillis())
         }
     }
 
@@ -412,15 +414,7 @@ class UltraWakeService : Service() {
                 if (!isCurrent()) return
                 if (interruptionOnly) {
                     commandCoordinator.onRecognitionFinished()
-                    speechInterruptionRetryCount++
-                    if (speechInterruptionRetryCount < MAX_SPEECH_INTERRUPT_RETRIES &&
-                        playbackGuard.isPlaybackActive()
-                    ) {
-                        scheduleSpeechInterruptionListenerAfterDelay(
-                            SPEECH_INTERRUPT_LISTEN_DELAY_MS *
-                                (1L shl speechInterruptionRetryCount)
-                        )
-                    }
+                    scheduleSpeechInterruptionRetry()
                     return
                 }
                 listener.onError(error)
@@ -603,6 +597,18 @@ class UltraWakeService : Service() {
     // Keep the no-argument entry point for existing callers and Robolectric tests.
     private fun scheduleSpeechInterruptionListener() =
         scheduleSpeechInterruptionListenerAfterDelay(SPEECH_INTERRUPT_LISTEN_DELAY_MS)
+
+    private fun scheduleSpeechInterruptionRetry() {
+        speechInterruptionRetryCount++
+        if (speechInterruptionRetryCount < MAX_SPEECH_INTERRUPT_RETRIES &&
+            playbackGuard.isPlaybackActive() && !stopped
+        ) {
+            scheduleSpeechInterruptionListenerAfterDelay(
+                SPEECH_INTERRUPT_LISTEN_DELAY_MS *
+                    (1L shl speechInterruptionRetryCount)
+            )
+        }
+    }
 
     // Distinctly named delayed scheduling avoids confusing this overload
     // with recursive recognition restarts during static security review.
