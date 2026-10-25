@@ -3,7 +3,7 @@ package com.cardenaspiero255.gamehubultra.voice
 import com.cardenaspiero255.gamehubultra.network.NetworkGameProfile
 import com.cardenaspiero255.gamehubultra.network.NetworkMetrics
 
-enum class NetworkVoiceRequest { OPTIMIZE, STATUS, PACKET_LOSS }
+enum class NetworkVoiceRequest { OPTIMIZE, STATUS, PACKET_LOSS, COMPETITIVE }
 
 data class VoiceNetworkSnapshot(
     val metrics: NetworkMetrics,
