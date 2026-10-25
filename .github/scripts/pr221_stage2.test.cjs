@@ -99,3 +99,15 @@ test('missing authenticated GitHub services never approve PR221',async()=>{
   assert.equal(verdict.autoApproveAllowed,false);
  }
 });
+
+test('final PR221 head may not change after exact Git blobs were authenticated',()=>{
+ const {verifyPr}=require('./ultra_sentinel_pr221_scope.cjs');
+ const verifiedHead=HEAD;
+ const valid={number:221,state:'open',changed_files:2,author_association:'OWNER',
+  user:{login:'cardenaspiero255-lang',id:322222186,type:'User'},
+  head:{sha:verifiedHead,repo:{full_name:'cardenaspiero255-lang/gamehub-ultra'}},
+  base:{sha:MAIN,ref:'main',repo:{full_name:'cardenaspiero255-lang/gamehub-ultra'}}};
+ assert.equal(verifyPr(valid,MAIN,verifiedHead),true);
+ assert.equal(verifyPr({...valid,head:{...valid.head,sha:'c'.repeat(40)}},MAIN,verifiedHead),false);
+ assert.equal(verifyPr(valid,MAIN,'d'.repeat(40)),false);
+});
