@@ -64,7 +64,6 @@ jobs:
           bash scripts/car29-verify-android-e2e.sh
       - name: Verify the exact non-skipped SHA-bound Android receipt
         shell: bash
-          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           test -s build/car29-android-e2e/CAR29-E2E-receipt.json
