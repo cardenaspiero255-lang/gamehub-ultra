@@ -29,7 +29,7 @@ function startedAt(run){
  if(!Number.isFinite(time))throw Error('INVALID_RUN_TIMESTAMP');
  return time;
 }
-function latestProtectedRun(result,workflowId,head,base){
+function latestProtectedRun(result,workflowId,head,base,minRunStartedAt=null){
  if(!Number.isSafeInteger(result?.total_count)||result.total_count<1||
     result.total_count>100||!Array.isArray(result.workflow_runs)||
     result.workflow_runs.length!==result.total_count)
@@ -61,6 +61,15 @@ function latestProtectedRun(result,workflowId,head,base){
  }
  if(!latest||latest.status!=='completed'||latest.conclusion!=='success')
   throw Error('LATEST_PROTECTED_RUN_NOT_SUCCESS');
+ // An authenticated historical run is still historical: it must not certify
+ // reviewer code deployed only after trusted main advanced.
+ if(minRunStartedAt!==null){
+  if(typeof minRunStartedAt!=='string'||
+     !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(minRunStartedAt)||
+     !Number.isFinite(Date.parse(minRunStartedAt))||
+     latestTime<=Date.parse(minRunStartedAt))
+   throw Error('HISTORICAL_PROTECTED_RUN');
+ }
  return latest;
 }
 function validatedJob(data,runId){
@@ -85,7 +94,11 @@ async function attestScopedPr221({github,owner,repo,pr,files}={}){
      exact.manualReviewRequired!==true||exact.autoApproveAllowed!==false||
      exact.autoMergeAllowed!==false||!SHA.test(exact.headSha||'')||
      !SHA.test(exact.mainSha||'')||
-     pr.head?.sha!==exact.headSha||pr.base?.sha!==exact.mainSha)
+     !SHA.test(exact.recordedBaseSha||'')||
+     pr.head?.sha!==exact.headSha||pr.base?.sha!==exact.recordedBaseSha||
+     (exact.recordedBaseSha!==exact.mainSha&&
+      (typeof exact.minRunStartedAt!=='string'||
+       !Number.isFinite(Date.parse(exact.minRunStartedAt)))))
    return incomplete();
   const metadata=(await github.rest.actions.getWorkflow({
    owner,repo,workflow_id:WORKFLOW})).data;
@@ -97,7 +110,8 @@ async function attestScopedPr221({github,owner,repo,pr,files}={}){
     owner,repo,workflow_id:metadata.id,head_sha:exact.headSha,
     event:'pull_request_target',per_page:100,page:1
    })).data;
-   return latestProtectedRun(response,metadata.id,exact.headSha,exact.mainSha);
+   return latestProtectedRun(response,metadata.id,exact.headSha,
+    exact.recordedBaseSha,exact.minRunStartedAt);
   };
   const latest=await fetchLatest();
   const jobs=(await github.rest.actions.listJobsForWorkflowRun({
@@ -108,7 +122,7 @@ async function attestScopedPr221({github,owner,repo,pr,files}={}){
    owner,repo,pull_number:221})).data;
   const base=(await github.rest.git.getRef({owner,repo,ref:'heads/main'})).data;
   if(after?.state!=='open'||after.head?.sha!==exact.headSha||
-     after.base?.sha!==exact.mainSha||base?.object?.sha!==exact.mainSha)
+     after.base?.sha!==exact.recordedBaseSha||base?.object?.sha!==exact.mainSha)
    return incomplete();
   const terminal=await fetchLatest();
   if(terminal.id!==latest.id||terminal.run_attempt!==latest.run_attempt)
