@@ -203,7 +203,7 @@ class UltraWakeSpeechInterruptionRobolectricTest {
     }
 
     @Test
-    fun repeatedInterruptionErrorsHaveBoundedRetries() {
+    fun repeatedInterruptionErrorsBackOffButKeepStopAvailableUntilSpeechEnds() {
         val service = UltraWakeService()
         val guard: UltraWakePlaybackGuard = field(service, "playbackGuard")
         val coordinator: UltraWakeCommandCoordinator = field(service, "commandCoordinator")
@@ -219,7 +219,9 @@ class UltraWakeSpeechInterruptionRobolectricTest {
             Long::class.javaPrimitiveType,
             Boolean::class.javaPrimitiveType
         ).apply { isAccessible = true }
-        for (attempt in 1..3) {
+        // A long response must not lose STOP permanently after three
+        // OEM ASR_BUSY errors. Keep retries, but cap the delay.
+        for (attempt in 1..7) {
             assertTrue(coordinator.tryStartSpeechInterruptionRecognition())
             UltraWakeService::class.java.getDeclaredField("recognitionGeneration")
                 .apply { isAccessible = true }.setLong(service, attempt.toLong())
@@ -228,13 +230,13 @@ class UltraWakeSpeechInterruptionRobolectricTest {
             assertFalse(coordinator.isRecognitionActive())
         }
         val retries: Int = field(service, "speechInterruptionRetryCount")
-        assertTrue(retries == 3, "Retry budget must be exhausted")
+        assertTrue(retries == 3, "Backoff exponent must be capped")
         val schedule = UltraWakeService::class.java.getDeclaredMethod(
             "scheduleSpeechInterruptionListener"
         ).apply { isAccessible = true }
         schedule.invoke(service)
-        // Errors 1 and 2 each schedule one backed-off retry. Error 3 and
-        // subsequent scheduling calls must not enqueue any new listening attempt.
+        // Seven errors: 560ms, 1120ms, then 5 x 2240ms. The explicit
+        // schedule adds a single ordinary 280ms listen while speech plays.
         Mockito.verify(handler).postDelayed(
             Mockito.any(Runnable::class.java),
             Mockito.eq(560L)
@@ -243,7 +245,17 @@ class UltraWakeSpeechInterruptionRobolectricTest {
             Mockito.any(Runnable::class.java),
             Mockito.eq(1120L)
         )
-        Mockito.verify(handler, Mockito.times(2)).postDelayed(
+        Mockito.verify(handler, Mockito.times(5)).postDelayed(
+            Mockito.any(Runnable::class.java),
+            Mockito.eq(2240L)
+        )
+        Mockito.verify(handler).postDelayed(
+            Mockito.any(Runnable::class.java),
+            Mockito.eq(280L)
+        )
+        guard.onPlaybackFinished(System.currentTimeMillis())
+        schedule.invoke(service)
+        Mockito.verify(handler, Mockito.times(8)).postDelayed(
             Mockito.any(Runnable::class.java),
             Mockito.anyLong()
         )
