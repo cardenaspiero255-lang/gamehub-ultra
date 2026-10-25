@@ -4,6 +4,7 @@ import com.cardenaspiero255.gamehubultra.voice.NaturalLanguageIntentResolver
 import com.cardenaspiero255.gamehubultra.voice.UltraCognitionIntentPolicy
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommand
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
+import com.cardenaspiero255.gamehubultra.voice.NetworkVoiceRequest
 import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalTime
@@ -106,6 +107,22 @@ object UltraUnifiedAgentRouter {
                     conversationHistory = conversationHistory
                 )
             )
+        }
+
+        // Keep the established unified-agent utility contract for this
+        // single network mode; continuous-listening command routing uses the
+        // exact VoiceCommand.Network(COMPETITIVE) and the same real optimizer.
+        // This prevents changing existing assistant capabilities/test APIs.
+        if (command == VoiceCommand.Network(NetworkVoiceRequest.COMPETITIVE)) {
+            UltraNetworkGamingIntentParser.parse(transcript)?.let { intent ->
+                return UltraAgentRoute.Utility(
+                    UltraGeneralAssistant.answer(
+                        intent = intent,
+                        clock = clock,
+                        telemetry = telemetry
+                    )
+                )
+            }
         }
 
         if (command is VoiceCommand.Network) {
