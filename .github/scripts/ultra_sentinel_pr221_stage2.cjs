@@ -44,16 +44,14 @@ function latestProtectedRun(result,workflowId,head,base){
   if(run.workflow_id!==workflowId||run.name!==WORKFLOW_NAME||
      run.event!=='pull_request_target'||run.head_sha!==head||
      run.head_repository?.full_name!==REPO||
-     !Array.isArray(run.pull_requests)||run.pull_requests.length>1)
+     !Array.isArray(run.pull_requests)||run.pull_requests.length!==1)
    throw Error('UNTRUSTED_RUN_IDENTITY');
-  // GitHub may return [] for pull_request_target runs. The trusted workflow
-  // has an immutable PR-number gate: only PR221 can finish its sole named job
-  // with "success". validatedJob() checks that job before attestation.
-  if(run.pull_requests.length===1){
-   const link=run.pull_requests[0];
-   if(link?.number!==221||link.head?.sha!==head||link.base?.sha!==base)
-    throw Error('INCORRECT_PR_LINKAGE');
-  }
+  // The run's exact PR HEAD and BASE must be established by authenticated
+  // GitHub metadata, not inferred from the job name or current branch state.
+  // Missing linkage fails closed even if the protected job finished green.
+  const link=run.pull_requests[0];
+  if(link?.number!==221||link.head?.sha!==head||link.base?.sha!==base)
+   throw Error('INCORRECT_PR_LINKAGE');
   if(time===latestTime&&latest&&run.id!==latest.id)
    throw Error('AMBIGUOUS_RUN_ORDER');
   if(time>latestTime||time===latestTime&&run.run_attempt>latest?.run_attempt){
