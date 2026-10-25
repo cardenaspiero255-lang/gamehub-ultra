@@ -87,4 +87,21 @@ class VerifySentryE2ETest(unittest.TestCase):
         with self.assertRaises(e2e.VerificationError):
             e2e.verify_event("org", "project", EVENT, RELEASE, TOKEN, opener=HugeOpener())
 
+
+    def test_trusted_environment_handoff_to_server_readback(self):
+        from unittest.mock import patch
+        with patch.dict("os.environ", {
+            "SENTRY_E2E_EVENT_ID": EVENT,
+            "SENTRY_RELEASE": RELEASE,
+            "SENTRY_AUTH_TOKEN": TOKEN,
+        }):
+            with patch.object(e2e, "verify_event", return_value={"verified": True}) as verify:
+                self.assertEqual(e2e.main(["--org", "org", "--project", "project"]), 0)
+                verify.assert_called_once_with("org", "project", EVENT, RELEASE, TOKEN)
+
+    def test_missing_environment_identity_fails_closed(self):
+        from unittest.mock import patch
+        with patch.dict("os.environ", {"SENTRY_AUTH_TOKEN": TOKEN}, clear=True):
+            self.assertEqual(e2e.main(["--org", "org", "--project", "project"]), 1)
+
 if __name__ == "__main__": unittest.main()
