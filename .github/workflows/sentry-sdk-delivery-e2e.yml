@@ -32,6 +32,9 @@ jobs:
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
           gradle-version: '8.13'
+      - name: Validate emulator boot and trusted workflow contract
+        shell: bash
+        run: python3 -m unittest tools/test_sentry_emulator_boot_contract.py tools/test_sentry_trusted_workflow.py -v
       - name: Build trusted Android app and opt-in instrumentation
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
