@@ -28,6 +28,40 @@ class UltraF9WakeRenameAndCompetitiveTest {
             }
     }
 
+
+    @Test fun competitiveExecutesRequestedProfileInsteadOfRecommendedProfile() {
+        val snapshot = VoiceNetworkSnapshot(
+            metrics = NetworkMetrics(
+                averageLatencyMs = 40.0,
+                jitterMs = 5.0,
+                packetLossPercent = 0.0,
+                spikeCount = 0,
+                stability = NetworkStability.GOOD
+            ),
+            recommendedProfile = NetworkGameProfile.BALANCED,
+            metered = false
+        )
+        var applied: NetworkGameProfile? = null
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommandParser.parse("Ultra activa modo competitivo"),
+            gamesProvider = { error("Network command must not enumerate games") },
+            launchGame = { error("Never launch a game for competitive network mode") },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(50, "normal") },
+            networkStatusProvider = { snapshot },
+            applyNetworkProfile = {
+                applied = it
+                NetworkOptimizationOutcome.LEASE_ACQUIRED_PENDING_INTERACTIVE
+            }
+        )
+        assertEquals(NetworkGameProfile.COMPETITIVE, applied)
+        val report = assertIs<VoiceActionResult.NetworkReport>(result)
+        assertFalse(report.optimizationApplied)
+        assertTrue(NetworkVoiceResponseText.format(report).contains("PREPARADO"))
+    }
+
     @Test fun namedAssistantIsUltraByDefaultAndCanBeRenamed() {
         assertEquals("ultra", UltraWakeNamePolicy.validate("Ultra"))
         assertEquals("roberto", UltraWakeNamePolicy.requestedName("Ultra desde ahora te llamaras Roberto"))
