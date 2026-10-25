@@ -120,13 +120,11 @@ internal class UltraBackgroundGameLaunchDispatcher(
                         Settings.canDrawOverlays(appContext)
                 },
                 notificationsAllowed = {
-                    NotificationManagerCompat.from(appContext).areNotificationsEnabled() &&
-                        (
-                            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                                ContextCompat.checkSelfPermission(
-                                    appContext, Manifest.permission.POST_NOTIFICATIONS
-                                ) == PackageManager.PERMISSION_GRANTED
-                            )
+                    val enabled = NotificationManagerCompat.from(appContext).areNotificationsEnabled()
+                    val permissionGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                        ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) ==
+                            PackageManager.PERMISSION_GRANTED
+                    enabled && permissionGranted
                 },
                 startActivity = appContext::startActivity,
                 postNotification = { packageName, intent ->
