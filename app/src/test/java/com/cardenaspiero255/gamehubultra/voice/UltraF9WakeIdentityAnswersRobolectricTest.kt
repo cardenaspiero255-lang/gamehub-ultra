@@ -80,4 +80,23 @@ class UltraF9WakeIdentityAnswersRobolectricTest {
             prefs.edit().clear().commit()
         }
     }
+    @Test fun inAppVoiceRenameRunsLocallyBeforeConversationalAI() {
+        val context = RuntimeEnvironment.getApplication()
+        val prefs = context.getSharedPreferences("ultra_wake_identity_v1", 0)
+        prefs.edit().clear().commit()
+        try {
+            assertEquals(
+                "Entendido. Ahora me puedes llamar juana.",
+                UltraWakeLocalIdentityActions.handle(context, "Ultra, desde ahora te llamarás Juana")
+            )
+            assertEquals("juana", UltraWakeNameStore(context).load())
+            assertEquals(
+                "Me llamo Juana, porque ese es el nombre que me pusiste. Antes me llamaba Ultra.",
+                UltraWakeLocalIdentityActions.handle(context, "Juana, cómo te llamas")
+            )
+        } finally {
+            prefs.edit().clear().commit()
+        }
+    }
+
 }
