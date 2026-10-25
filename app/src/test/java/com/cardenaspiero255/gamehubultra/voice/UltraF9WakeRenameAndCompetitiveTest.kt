@@ -20,6 +20,18 @@ class UltraF9WakeRenameAndCompetitiveTest {
             }
     }
 
+    @Test fun reservedCompetitiveCommandBeatsPersistedGameAlias() {
+        val result = VoiceCommandParser.parse(
+            "Ultra activa modo competitivo",
+            knownGameAliases = setOf("activa modo competitivo"),
+            optionalResolver = object : NaturalLanguageIntentResolver {
+                override fun resolve(transcript: String): VoiceCommand =
+                    VoiceCommand.OpenGame("inventado")
+            }
+        )
+        assertEquals(VoiceCommand.Network(NetworkVoiceRequest.COMPETITIVE), result)
+    }
+
     @Test fun hypotheticalAndNegatedCompetitiveNeverExecute() {
         listOf("Ultra no actives modo competitivo", "Ultra que pasaria si activara modo competitivo",
             "Ultra activa modo competitivo para jugar a algo")
