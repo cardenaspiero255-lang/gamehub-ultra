@@ -113,11 +113,13 @@ Deno.test(
       },
       env: () => undefined,
     };
-    for (const query of [
-      "¿Qué es caramelizar?",
-      "¿Qué significa caramelizar?",
-      "¿Qué es la caramelización?",
-    ]) {
+    for (
+      const query of [
+        "¿Qué es caramelizar?",
+        "¿Qué significa caramelizar?",
+        "¿Qué es la caramelización?",
+      ]
+    ) {
       const result = await routeResearchQuery(
         query,
         deps,
@@ -145,7 +147,9 @@ Deno.test(
         result.sourceId ||
         (result.sourceIds?.length ?? 0) !== 0
       ) {
-        throw new Error("Stable local explanation must not pretend to be verified");
+        throw new Error(
+          "Stable local explanation must not pretend to be verified",
+        );
       }
     }
   },
