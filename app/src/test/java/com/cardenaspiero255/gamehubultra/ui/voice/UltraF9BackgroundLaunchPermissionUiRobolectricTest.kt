@@ -81,7 +81,7 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
     )
 
     @Composable
-    private fun LiveCard(dependencies: UltraUiRuntimeDependencies) {
+    private fun LiveCard(\n        dependencies: UltraUiRuntimeDependencies,\n        onVoiceController: ((com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController) -> Unit)? = null\n    ) {
         var conversation by remember { mutableStateOf(emptyList<String>()) }
         val runner = remember {
             UltraAssistantQueryRunner(
@@ -202,5 +202,47 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
         ).assertExists()
         rule.onNodeWithText("Conceder «Mostrar sobre otras aplicaciones» (opcional)")
             .assertDoesNotExist()
+    }
+
+    @Test fun realMicrophoneTranscriptRenamesAndAnswersWithoutConversationalRouting() {
+        val context = RuntimeEnvironment.getApplication<android.app.Application>()
+        context.getSharedPreferences("ultra_wake_identity_v1", 0).edit().clear().commit()
+        val dependencies = runtime()
+        var activeController: com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController? = null
+        rule.setContent {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                LiveCard(dependencies, onVoiceController = { activeController = it })
+            }
+        }
+        rule.runOnIdle {
+            val listener = requireNotNull(activeController).recognitionListenerForTest()
+            listener.onResults(android.os.Bundle().apply {
+                putStringArrayList(
+                    android.speech.SpeechRecognizer.RESULTS_RECOGNITION,
+                    arrayListOf("Ultra, desde ahora te llamarás Juana")
+                )
+            })
+        }
+        rule.waitUntil(15000) { UltraWakeNameStore(context).load() == "juana" }
+        rule.waitUntil(15000) {
+            rule.onAllNodesWithText(
+                "Entendido. Ahora me puedes llamar juana.", substring = true
+            ).fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.runOnIdle {
+            val listener = requireNotNull(activeController).recognitionListenerForTest()
+            listener.onResults(android.os.Bundle().apply {
+                putStringArrayList(
+                    android.speech.SpeechRecognizer.RESULTS_RECOGNITION,
+                    arrayListOf("Juana, cómo te llamas")
+                )
+            })
+        }
+        rule.waitUntil(15000) {
+            rule.onAllNodesWithText(
+                "Me llamo Juana, porque ese es el nombre que me pusiste.", substring = true
+            ).fetchSemanticsNodes().isNotEmpty()
+        }
+        Mockito.verifyNoInteractions(dependencies.agentRouter, dependencies.queryExecutor)
     }
 }
