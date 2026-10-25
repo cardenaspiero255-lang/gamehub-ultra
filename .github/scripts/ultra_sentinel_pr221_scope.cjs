@@ -59,6 +59,36 @@ function verifiedBlob(body,expected){
  if(gitSha!==expected)return null;
  return bytes.toString('utf8');
 }
+/**
+ * A PR can retain its older GitHub base SHA after trusted main fast-forwards.
+ * Allow that only when GitHub proves ancestry AND the current main's exact
+ * pinned blob contents are independently re-read below. For an advanced main
+ * require a new protected run started after its authenticated commit time:
+ * historical green evidence never certifies the new main.
+ */
+async function authenticatedMainAncestry({github,owner,repo,recordedBaseSha,mainSha}={}){
+ if(owner!==OWNER||repo!=='gamehub-ultra'||
+    !HEAD_SHA_PATTERN.test(recordedBaseSha||'')||
+    !HEAD_SHA_PATTERN.test(mainSha||''))return null;
+ if(recordedBaseSha===mainSha)
+  return Object.freeze({recordedBaseSha,mainSha,minRunStartedAt:null});
+ if(!github?.rest?.repos?.compareCommits||!github.rest.repos.getCommit)return null;
+ try{
+  const {data:ancestry}=await github.rest.repos.compareCommits({
+   owner,repo,base:recordedBaseSha,head:mainSha
+  });
+  if(ancestry?.status!=='ahead'||!Number.isSafeInteger(ancestry.ahead_by)||
+     ancestry.ahead_by<1||ancestry.behind_by!==0||
+     ancestry.base_commit?.sha!==recordedBaseSha||
+     ancestry.merge_base_commit?.sha!==recordedBaseSha)return null;
+  const {data:commit}=await github.rest.repos.getCommit({owner,repo,ref:mainSha});
+  const timestamp=commit?.commit?.committer?.date;
+  if(commit?.sha!==mainSha||typeof timestamp!=='string'||
+     !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(timestamp)||
+     !Number.isFinite(Date.parse(timestamp)))return null;
+  return Object.freeze({recordedBaseSha,mainSha,minRunStartedAt:timestamp});
+ }catch(_){return null;}
+}
 async function attestExactPr221({github,owner,repo}={}){
  if(owner!==OWNER||repo!=='gamehub-ultra'||!github?.rest?.pulls?.get||
     !github.rest.pulls.listFiles||!github.rest.git?.getRef||
@@ -72,7 +102,13 @@ async function attestExactPr221({github,owner,repo}={}){
   if(original?.number!==221)return notApplicable();
   const mainSha=await getMain();
   const headSha=original?.head?.sha;
-  if(!/^[a-f0-9]{40}$/.test(mainSha||'')||!verifyPr(original,mainSha,headSha))return incomplete();
+  const recordedBaseSha=original?.base?.sha;
+  if(!HEAD_SHA_PATTERN.test(mainSha||'')||
+     !verifyPr(original,recordedBaseSha,headSha))return incomplete();
+  const ancestry=await authenticatedMainAncestry({
+   github,owner,repo,recordedBaseSha,mainSha
+  });
+  if(!ancestry)return incomplete();
   const files=(await github.rest.pulls.listFiles({owner,repo,pull_number:221,per_page:100,page:1})).data;
   if(!verifyFiles(files))return incomplete();
   const sources=new Map();
@@ -88,11 +124,12 @@ async function attestExactPr221({github,owner,repo}={}){
   }
   if(!exactMaskDiff(sources.get('base:'+SOURCE),sources.get('head:'+SOURCE)))return incomplete();
   const final=(await github.rest.pulls.get({owner,repo,pull_number:221})).data;
-  if(!verifyPr(final,mainSha,headSha)||await getMain()!==mainSha)return incomplete();
+  if(!verifyPr(final,recordedBaseSha,headSha)||await getMain()!==mainSha)return incomplete();
   return Object.freeze({status:'AUTHENTICATED_EXACT_DELTA_MANUAL_REVIEW_REQUIRED',
-   headSha,mainSha,baselineMainSha:BASELINE_MAIN,changedFiles:2,maskInsertions:2,
+   headSha,mainSha,recordedBaseSha,minRunStartedAt:ancestry.minRunStartedAt,
+   baselineMainSha:BASELINE_MAIN,changedFiles:2,maskInsertions:2,
    provenanceAuthenticated:true,manualReviewRequired:true,
    autoApproveAllowed:false,autoMergeAllowed:false});
  }catch(_){return incomplete();}
 }
-module.exports={attestExactPr221,exactMaskDiff,verifiedBlob,verifyPr};
+module.exports={attestExactPr221,authenticatedMainAncestry,exactMaskDiff,verifiedBlob,verifyPr};
