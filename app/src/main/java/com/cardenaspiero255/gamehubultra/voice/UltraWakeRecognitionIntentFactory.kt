@@ -27,10 +27,12 @@ internal object UltraWakeRecognitionIntentFactory {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 putStringArrayListExtra(
                     RecognizerIntent.EXTRA_BIASING_STRINGS,
-                    arrayListOf(
-                        "Ultra", wakeName, "Ultra para", "$wakeName para",
-                        "Ultra detente", "$wakeName detente"
-                    ).distinct().let(::ArrayList)
+                    ArrayList(
+                        listOf(
+                            "Ultra", wakeName, "Ultra para", "$wakeName para",
+                            "Ultra detente", "$wakeName detente"
+                        ).distinct()
+                    )
                 )
             }
 
