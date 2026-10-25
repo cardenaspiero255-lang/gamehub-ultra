@@ -12,10 +12,10 @@ jobs:
       - name: Checkout candidate immutable SHA without secrets
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: 3ffd042aab7f4362e0cfc37e7cf5bb8376d3ce04
+          ref: 21d3a4c52cad47c6a33b2c85ec199298f71560c2
           persist-credentials: false
       - name: Validate unprivileged workflow contracts
-        run: python3 -m unittest tools/test_sentry_trusted_workflow.py -v
+        run: python3 -m unittest tools/test_sentry_trusted_workflow.py tools/test_sentry_e2e_verify.py -v
       - name: Install locked YAML parser
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify security properties with AST
