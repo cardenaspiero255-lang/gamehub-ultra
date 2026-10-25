@@ -60,6 +60,15 @@ class UltraF9WakeNamePersistenceRobolectricTest {
         }
     }
 
+    @Test fun detachedServiceCannotCrashWhenVoiceNameIsLookedUp() {
+        val service = UltraWakeService()
+        val check = UltraWakeService::class.java.getDeclaredMethod(
+            "containsWakeWord", String::class.java
+        ).apply { isAccessible = true }
+        assertTrue(check.invoke(service, "Ultra abre BS") as Boolean)
+        assertFalse(check.invoke(service, "esto no es una orden") as Boolean)
+    }
+
     @Test fun asrBiasContainsCustomNameAndOriginalUltra() {
         val intent = UltraWakeRecognitionIntentFactory.create(
             languageTag = "es-CL",
