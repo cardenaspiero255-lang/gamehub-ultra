@@ -6,12 +6,16 @@ on:
     paths:
       - 'tools/f9_security_preflight.py'
       - 'tools/test_f9_security_preflight.py'
+      - 'tools/f9_source_audit.py'
+      - 'tools/test_f9_source_audit.py'
       - '.github/workflows/f9-static-appsec-preflight.yml'
   push:
     branches: [main]
     paths:
       - 'tools/f9_security_preflight.py'
       - 'tools/test_f9_security_preflight.py'
+      - 'tools/f9_source_audit.py'
+      - 'tools/test_f9_source_audit.py'
       - '.github/workflows/f9-static-appsec-preflight.yml'
   workflow_dispatch:
 
@@ -35,9 +39,13 @@ jobs:
       - name: Compile F9 preflight and tests
         shell: bash
         run: |
-          python3 -m py_compile tools/f9_security_preflight.py tools/test_f9_security_preflight.py
+          python3 -m py_compile tools/f9_security_preflight.py tools/test_f9_security_preflight.py tools/f9_source_audit.py tools/test_f9_source_audit.py
       - name: Run fail-closed red-green/adversarial preflight suite
         shell: bash
         run: |
           python3 -W error::ResourceWarning -m unittest discover \
-            -s tools -p 'test_f9_security_preflight.py' -v
+            -s tools -p 'test_f9_*.py' -v
+      - name: Inspect actual checked-out Android manifest, release config and CI signing
+        shell: bash
+        run: |
+          python3 tools/f9_source_audit.py --root . --channel internal-debug --report "$RUNNER_TEMP/f9-source-audit.json"
