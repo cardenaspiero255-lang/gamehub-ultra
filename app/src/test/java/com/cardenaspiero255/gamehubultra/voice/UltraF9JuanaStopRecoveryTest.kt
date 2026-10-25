@@ -3,6 +3,9 @@ package com.cardenaspiero255.gamehubultra.voice
 import android.content.Intent
 import android.os.Handler
 import kotlin.test.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -10,6 +13,8 @@ import kotlin.test.assertTrue
 import org.mockito.Mockito
 
 /** Regression: "Juana, para" failed after OEM ASR gave three transient errors. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class UltraF9JuanaStopRecoveryTest {
     private fun <T> field(service: UltraWakeService, name: String): T =
         UltraWakeService::class.java.getDeclaredField(name)
