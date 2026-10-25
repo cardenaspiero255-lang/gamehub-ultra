@@ -1,7 +1,11 @@
 package com.cardenaspiero255.gamehubultra.ui.voice
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -75,6 +79,19 @@ internal fun VoiceAssistantCard(
     visualOcrOverride: (suspend (android.content.Context, android.net.Uri, UltraVisualReadControl, android.os.CancellationSignal) -> String)? = null
 ) {
     val context = LocalContext.current
+    var backgroundLaunchAllowed by remember(context) {
+        mutableStateOf(
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                Settings.canDrawOverlays(context)
+        )
+    }
+    val overlayPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        backgroundLaunchAllowed =
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                Settings.canDrawOverlays(context)
+    }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val aliasRepository = ultraRuntime.aliasRepository
     val aiAdvisor = ultraRuntime.assistant
@@ -901,7 +918,7 @@ applyNetworkProfile = networkGaming::applyProfile
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Escucha continua", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Responde solo cuando digas “Ultra”.",
+                        "Responde cuando digas Ultra o el nombre personalizado que elegiste.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -932,6 +949,42 @@ applyNetworkProfile = networkGaming::applyProfile
                         }
                     }
                 )
+            }
+            if (continuousListeningEnabled) {
+                Text(
+                    "Fuera de GameHub, Android puede impedir abrir juegos " +
+                        "automáticamente. En ese caso Ultra envía una " +
+                        "notificación que debes tocar. No se activa ningún " +
+                        "permiso adicional sin tu autorización.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    if (backgroundLaunchAllowed) {
+                        Text(
+                            "Permiso opcional de apertura desde segundo plano concedido. " +
+                                "Android todavía puede restringir algunas aperturas.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        TextButton(
+                            onClick = {
+                                runCatching {
+                                    overlayPermissionLauncher.launch(
+                                        Intent(
+                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            Uri.parse("package:${context.packageName}")
+                                        )
+                                    )
+                                }.onFailure {
+                                    response = "No pude abrir los ajustes de permisos. " +
+                                        "Puedes seguir usando la notificación para abrir juegos."
+                                }
+                            }
+                        ) {
+                            Text("Permitir apertura manos libres fuera de GameHub")
+                        }
+                    }
+                }
             }
             TextButton(
                 onClick = {
