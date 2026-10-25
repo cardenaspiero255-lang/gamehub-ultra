@@ -40,22 +40,83 @@ jobs:
         run: |
           set -euo pipefail
           gradle :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace --no-daemon
-      - name: Boot isolated API35 emulator
+      - name: Boot isolated API35 emulator with verified Android CI configuration
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager --install "platforms;android-35" "system-images;android-35;google_apis;x86_64" "emulator" "platform-tools" >/dev/null
-          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
-          echo no | avdmanager create avd --force --name gamehub-sentry-e2e --package "system-images;android-35;google_apis;x86_64" >/dev/null
-          nohup "$ANDROID_HOME/emulator/emulator" -avd gamehub-sentry-e2e -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect > "$RUNNER_TEMP/sentry-emulator.log" 2>&1 &
-          timeout 360 adb wait-for-device
-          ready=0
-          for attempt in $(seq 1 120); do
-            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then ready=1; break; fi
-            sleep 2
-          done
-          test "$ready" -eq 1
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          if [ ! -e /dev/kvm ]; then
+            echo "::error::Isolated Android emulator needs /dev/kvm on this runner."
+            exit 1
+          fi
+          sudo chmod 666 /dev/kvm
+          bash .github/scripts/install-android-runtime-sdk.sh
+          IMAGE_DIR="$SDK_ROOT/system-images/android-35/google_apis/x86_64"
+          EMULATOR_BIN="$SDK_ROOT/emulator/emulator"
+          test -x "$EMULATOR_BIN"
+          test -s "$IMAGE_DIR/system.img"
+          test -s "$IMAGE_DIR/ramdisk.img"
+          test -e "$IMAGE_DIR/data/empty_data_disk"
+          AVD_HOME="$HOME/.android/avd"
+          AVD_DIR="$AVD_HOME/gamehub-sentry-e2e.avd"
+          AVD_INI="$AVD_HOME/gamehub-sentry-e2e.ini"
+          unset ANDROID_EMULATOR_HOME ANDROID_AVD_HOME
+          rm -rf "$AVD_DIR" "$AVD_INI"
+          mkdir -p "$AVD_DIR"
+          cat > "$AVD_INI" <<EOF
+          avd.ini.encoding=UTF-8
+          path=$AVD_DIR
+          path.rel=avd/gamehub-sentry-e2e.avd
+          target=android-35
+          EOF
+          cat > "$AVD_DIR/config.ini" <<EOF
+          AvdId=gamehub-sentry-e2e
+          PlayStore.enabled=false
+          abi.type=x86_64
+          avd.ini.displayname=gamehub-sentry-e2e
+          disk.dataPartition.size=4G
+          hw.audioInput=no
+          hw.camera.back=none
+          hw.camera.front=none
+          hw.cpu.arch=x86_64
+          hw.cpu.ncore=4
+          hw.gpu.enabled=yes
+          hw.gpu.mode=auto
+          hw.keyboard=yes
+          hw.lcd.density=420
+          hw.lcd.height=1920
+          hw.lcd.width=1080
+          hw.ramSize=4096
+          image.sysdir.1=system-images/android-35/google_apis/x86_64/
+          target=android-35
+          vm.heapSize=512
+          EOF
+          mkdir -p "$HOME/.android"
+          : > "$HOME/.emulator_console_auth_token"
+          "$EMULATOR_BIN" -list-avds | grep -Fxq gamehub-sentry-e2e
+          adb start-server >/dev/null
+          nohup "$EMULATOR_BIN" -avd gamehub-sentry-e2e \
+            -port 5554 \
+            -no-window -no-audio -no-boot-anim -no-snapshot-load -no-snapshot-save \
+            -no-metrics -gpu swiftshader_indirect -memory 4096 -cores 4 \
+            -camera-back none -camera-front none -netdelay none -netspeed full \
+            > "$RUNNER_TEMP/sentry-emulator.log" 2>&1 &
+          EMULATOR_PID=$!
+          sleep 2
+          kill -0 "$EMULATOR_PID"
+          timeout 300 adb wait-for-device
+          timeout 600 bash -c '
+            while true; do
+              state="$(adb get-state 2>/dev/null || true)"
+              boot="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r" || true)"
+              if [ "$state" = "device" ] && [ "$boot" = "1" ]; then break; fi
+              sleep 2
+            done
+          '
+          kill -0 "$EMULATOR_PID"
+          adb shell getprop ro.kernel.qemu | tr -d '\r' | grep -Fxq 1
           adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -Fxq 35
+          test "$(adb devices | sed -n '/device$/p' | wc -l | tr -d ' ')" -eq 1
       - name: Capture controlled SDK event on Android
         id: capture
         shell: bash
