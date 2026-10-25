@@ -86,6 +86,14 @@ class SentryReleaseAuthFallbackTest(unittest.TestCase):
         self.assertIn("sys.exit(3)", script)
         self.assertNotIn("Trusted release registration was skipped cleanly", script)
 
+    def test_ci_signing_passwords_are_redacted_before_export_or_keytool(self):
+        workflow = (ROOT / ".github/workflows/android.yml").read_text(encoding="utf-8")
+        blocks = workflow.split('PASSWORD="$(openssl rand -hex 24)"')
+        self.assertEqual(len(blocks), 3, "Two protected CI signing flows")
+        for block in blocks[1:]:
+            self.assertIn('echo "::add-mask::$PASSWORD"', block.split("keytool -genkeypair", 1)[0])
+        self.assertEqual(workflow.count('echo "::add-mask::$PASSWORD"'), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
