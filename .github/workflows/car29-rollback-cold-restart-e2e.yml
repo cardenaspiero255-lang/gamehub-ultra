@@ -1,0 +1,99 @@
+name: CAR-29 trusted Android cold-restart rollback E2E
+# Executes exclusively on trusted main; never receives credentials from untrusted PRs.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/car29-rollback-cold-restart-e2e.yml'
+permissions:
+  contents: read
+concurrency:
+  group: car29-trusted-rollback-cold-restart
+  cancel-in-progress: false
+jobs:
+  cold-restart-proof:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout immutable trusted main without credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Java 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          gradle-version: '8.13'
+      - name: Validate workflow and driver safety contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest tools/test_car29_cold_restart_workflow.py -v
+          python3 -m unittest discover -s scripts/tests -p 'test_car29_android_restart.py' -v
+      - name: Create isolated Android 35 emulator (never a user phone)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install "platforms;android-35" "system-images;android-35;google_apis;x86_64" "emulator" "platform-tools" >/dev/null
+          if test -e /dev/kvm; then sudo chmod 666 /dev/kvm; fi
+          echo no | avdmanager create avd --force --name car29-rollback-e2e --package "system-images;android-35;google_apis;x86_64" >/dev/null
+          nohup "$ANDROID_HOME/emulator/emulator" -avd car29-rollback-e2e -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect > "$RUNNER_TEMP/car29-emulator.log" 2>&1 &
+          timeout 360 adb wait-for-device
+          ready=0
+          for attempt in $(seq 1 120); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" -eq 1
+          adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -Fxq 35
+          adb shell getprop ro.kernel.qemu | tr -d '\r' | grep -Fxq 1
+          test "$(adb devices | sed -n '/device$/p' | wc -l | tr -d ' ')" -eq 1
+      - name: Execute actual OS force-stop + cold start and persistent rollback
+        shell: bash
+        env:
+          CAR29_PROOF_DIR: ${{ runner.temp }}/car29-proof
+        run: |
+          set -euo pipefail
+          bash scripts/car29-verify-android-e2e.sh
+      - name: Verify the exact non-skipped SHA-bound Android receipt
+        shell: bash
+        env:
+          CAR29_PROOF_DIR: ${{ runner.temp }}/car29-proof
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -s "$CAR29_PROOF_DIR/CAR29-E2E-receipt.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ['CAR29_PROOF_DIR'])
+          receipt = json.loads((root / 'CAR29-E2E-receipt.json').read_text(encoding='utf8'))
+          expected = os.environ['EXPECTED_SHA']
+          assert len(expected) == 40 and all(c in '0123456789abcdef' for c in expected)
+          assert receipt['gitSha'] == expected
+          assert receipt['result'] == 'PASS'
+          assert receipt['androidForceStopAndColdStart'] is True
+          assert receipt['persistentSessionReplayAndRollbackVerifiedAfterColdStart'] is True
+          assert receipt['processBeforeForceStopPid'] != receipt['processAfterColdStartPid']
+          assert len(receipt['junitSha256']) == 64
+          assert all(len(value) == 64 for value in receipt['phaseLogSha256'].values())
+          print('VERIFIED: exact CAR-29 cold restart rollback E2E on trusted main')
+          PY
+      - name: Upload only minimal JSON proof of real emulator restart
+        if: success()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: car29-cold-restart-proof
+          path: ${{ runner.temp }}/car29-proof/CAR29-E2E-receipt.json
+          if-no-files-found: error
+          retention-days: 7
