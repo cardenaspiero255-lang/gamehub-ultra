@@ -71,3 +71,34 @@ test('base may advance only when authenticated main SHA matches PR base, with pi
  assert.equal(verifyPr(pr,'f'.repeat(40),pr.head.sha),true);
  assert.equal(verifyPr(pr,MAIN,pr.head.sha),false);
 });
+
+test('trusted main ancestry accepts only GitHub-verified fast-forward with current commit time',async()=>{
+ const {authenticatedMainAncestry}=require('./ultra_sentinel_pr221_scope.cjs');
+ const before='1'.repeat(40),after='2'.repeat(40),when='2026-10-25T02:33:58Z';
+ const good={rest:{repos:{
+  compareCommits:async()=>({data:{status:'ahead',ahead_by:1,behind_by:0,
+   base_commit:{sha:before},merge_base_commit:{sha:before}}}),
+  getCommit:async()=>({data:{sha:after,commit:{committer:{date:when}}}})
+ }}};
+ const options={github:good,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',
+  recordedBaseSha:before,mainSha:after};
+ const evidence=await authenticatedMainAncestry(options);
+ assert.deepEqual(evidence,{recordedBaseSha:before,mainSha:after,minRunStartedAt:when});
+ assert.deepEqual(await authenticatedMainAncestry({...options,mainSha:before}),
+  {recordedBaseSha:before,mainSha:before,minRunStartedAt:null});
+ for(const data of [
+  {status:'diverged',ahead_by:1,behind_by:1,base_commit:{sha:before},merge_base_commit:{sha:before}},
+  {status:'ahead',ahead_by:1,behind_by:0,base_commit:{sha:before},merge_base_commit:{sha:after}},
+  {status:'behind',ahead_by:0,behind_by:1,base_commit:{sha:before},merge_base_commit:{sha:before}}
+ ]){
+  const github={rest:{repos:{...good.rest.repos,
+   compareCommits:async()=>({data})}}};
+  assert.equal(await authenticatedMainAncestry({...options,github}),null);
+ }
+ const noApi={rest:{repos:{}}};
+ assert.equal(await authenticatedMainAncestry({...options,github:noApi}),null);
+ const badTimestamp={rest:{repos:{...good.rest.repos,
+  getCommit:async()=>({data:{sha:after,commit:{committer:{date:'not-an-ISO-time'}}}})}}};
+ assert.equal(await authenticatedMainAncestry({...options,github:badTimestamp}),null);
+ assert.equal(await authenticatedMainAncestry({...options,repo:'foreign-repo'}),null);
+});
