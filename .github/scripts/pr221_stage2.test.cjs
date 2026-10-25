@@ -27,11 +27,12 @@ test('latest trusted PR221 run is scoped to exact authenticated linkage',()=>{
   conclusion:'failure'});
  assert.throws(()=>latest([run(),failed]),/LATEST_PROTECTED_RUN_NOT_SUCCESS/);
 });
-test('GitHub pull_request_target run can omit pull_requests linkage; protected job must still prove PR221',()=>{
+test('unlinked pull_request_target run cannot authenticate its base even when job succeeds',()=>{
  const unlinkedRun=run({pull_requests:[]});
- assert.equal(latest([unlinkedRun]).id,123);
+ assert.throws(()=>latest([unlinkedRun]),/UNTRUSTED_RUN_IDENTITY/);
  const protectedJob={id:200,run_id:123,name:JOB_NAME,status:'completed',conclusion:'success'};
  assert.doesNotThrow(()=>validatedJob({total_count:1,jobs:[protectedJob]},123));
+ // A successful named job alone does NOT establish which base it verified.
  for(const conclusion of ['skipped','failure','cancelled'])
   assert.throws(()=>validatedJob({total_count:1,jobs:[{...protectedJob,conclusion}]},123));
 });
