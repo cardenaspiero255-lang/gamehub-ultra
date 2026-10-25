@@ -197,7 +197,12 @@ internal class UltraWakeCommandRuntime(
                             UltraSessionProfileSafety.canApply(
                                 command = VoiceCommand.SelectProfile(profile),
                                 sessionActive = true,
-                                safelySupported = capabilities.sustainedPerformanceSupported
+                                // Selecting a saved preset is safe on all devices.
+                                // The actual PerformanceController separately
+                                // checks Android hardware support before requesting
+                                // Sustained Performance Mode. This does NOT turn
+                                // X4 into a hardware frame-generation capability.
+                                safelySupported = true
                             )
                         }
                     },
