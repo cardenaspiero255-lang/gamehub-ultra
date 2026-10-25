@@ -53,15 +53,24 @@ internal object UltraWakeNamePolicy {
             clean.startsWith("gamehub ultra ")
     }
 
+    /**
+     * Match only the invocation token. Never normalize the full utterance:
+     * normalize() strips decimal points, minus signs and math operators that
+     * the downstream math and conversion engines need verbatim.
+     */
     fun canonicalizeInvocation(transcript: String, currentName: String): String {
-        val clean = VoiceCommandParser.normalize(transcript)
         val name = validate(currentName) ?: DEFAULT_NAME
-        if (name == DEFAULT_NAME) return clean
-        return when {
-            clean.startsWith("$name ") -> "ultra " + clean.removePrefix("$name ")
-            clean.startsWith("hey $name ") -> "ultra " + clean.removePrefix("hey $name ")
-            else -> clean
-        }
+        if (name == DEFAULT_NAME) return transcript
+
+        val invocation = Regex(
+            """^\s*(?:hey\s+)?([\p{L}]+)(?:\s*[,;:]\s*|\s+)""",
+            RegexOption.IGNORE_CASE
+        ).find(transcript) ?: return transcript
+
+        val spokenName = VoiceCommandParser.normalize(invocation.groupValues[1])
+        if (spokenName != name) return transcript
+        val body = transcript.substring(invocation.range.last + 1).trimStart()
+        return if (body.isNotBlank()) "ultra $body" else transcript
     }
 }
 
