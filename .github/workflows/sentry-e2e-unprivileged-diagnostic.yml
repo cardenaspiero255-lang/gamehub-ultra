@@ -1,0 +1,30 @@
+name: Sentry trusted event E2E unprivileged diagnostics
+on:
+  push:
+    branches: [ci/sentry-e2e-readonly-proof-20261024]
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout candidate immutable SHA without secrets
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: 8f232157d4b5749bbc8bea83f54b5a76733ef926
+          persist-credentials: false
+      - name: Validate unprivileged workflow contracts
+        run: python3 -m unittest tools/test_sentry_trusted_workflow.py -v
+      - name: Install locked YAML parser
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify security properties with AST
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs');
+          const {inspectWorkflow}=require('./.github/scripts/ultra_sentinel_yaml_ast.cjs');
+          const path='.github/workflows/sentry-sdk-delivery-e2e.yml';
+          const x=inspectWorkflow(fs.readFileSync(path,'utf8'),{path,trustedRepository:'cardenaspiero255-lang/gamehub-ultra'});
+          console.log(JSON.stringify({status:x.status,coverage:x.coverage,findings:x.findings},null,2));
+          if(x.status!=='NO_RISK_PATTERN')process.exitCode=2;
+          JS
