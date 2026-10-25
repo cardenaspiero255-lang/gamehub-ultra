@@ -25,6 +25,12 @@ internal object UltraWakeRoutePrecedencePolicy {
                 )
             )
         }
+        // An explicit network-mode instruction must not be treated as an
+        // "activa <game>" launch merely because the verb is shared.
+        // Keep negations, discussions and real game titles out of this override.
+        if (UltraCompetitiveVoiceCommandPolicy.matches(transcript)) {
+            return fallback()
+        }
         return when {
             personalizedCommand != null -> UltraAgentRoute.Command(personalizedCommand)
             contextualCommand !is VoiceCommand.Unknown ->
