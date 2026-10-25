@@ -99,4 +99,29 @@ class UltraF9WakeIdentityAnswersRobolectricTest {
         }
     }
 
+
+    @Test fun nonIdentityTextStillReachesTheCommandRouterWithoutLosingNumbers() {
+        val context = RuntimeEnvironment.getApplication()
+        val prefs = context.getSharedPreferences("ultra_wake_identity_v1", 0)
+        prefs.edit().clear().commit()
+        try {
+            assertTrue(UltraWakeNameStore(context).save("Juana"))
+            assertEquals(
+                "ultra convierte -2.5 kilómetros a metros",
+                UltraWakeLocalIdentityActions.canonicalize(
+                    context, "Juana, convierte -2.5 kilómetros a metros"
+                )
+            )
+            assertEquals(
+                "abre BS",
+                UltraWakeLocalIdentityActions.canonicalize(context, "abre BS")
+            )
+            assertEquals(
+                null,
+                UltraWakeLocalIdentityActions.handle(context, "Juana, no cambies tu nombre")
+            )
+        } finally {
+            prefs.edit().clear().commit()
+        }
+    }
 }
