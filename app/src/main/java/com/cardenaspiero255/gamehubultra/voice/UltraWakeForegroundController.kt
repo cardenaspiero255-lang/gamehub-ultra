@@ -3,6 +3,8 @@ package com.cardenaspiero255.gamehubultra.voice
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
 import android.app.Service
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -19,6 +21,17 @@ internal class UltraWakeForegroundController(
             .setContentTitle("GameHub Ultra")
             .setContentText("Escucha activa: di “Ultra …” para usar comandos.")
             .setOngoing(true)
+            .addAction(
+                R.drawable.ic_gamehub_tile,
+                "Detener voz",
+                PendingIntent.getService(
+                    service,
+                    2417,
+                    Intent(service, UltraWakeService::class.java)
+                        .setAction(UltraWakeService.ACTION_STOP_SPEECH),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            )
             .setCategory(Notification.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
