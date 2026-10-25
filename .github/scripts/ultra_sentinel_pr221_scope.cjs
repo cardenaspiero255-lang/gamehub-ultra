@@ -28,10 +28,11 @@ function exactMaskDiff(before,after){
  if(after.split(ASSIGN+MASK).length!==3)return false;
  return after.replaceAll(MASK,'')===before;
 }
-function verifyPr(pr, trustedMain){
+function verifyPr(pr, trustedMain, verifiedHead){
  return pr?.number===221&&pr.state==='open'&&pr.changed_files===2&&
  pr.user?.login===OWNER&&pr.user?.id===322222186&&pr.user?.type==='User'&&
- pr.author_association==='OWNER'&&HEAD_SHA_PATTERN.test(pr.head?.sha||'')&&
+ pr.author_association==='OWNER'&&HEAD_SHA_PATTERN.test(verifiedHead||'')&&
+ pr.head?.sha===verifiedHead&&
  pr.base?.sha===trustedMain&&
  pr.head?.repo?.full_name===REPO&&pr.base?.repo?.full_name===REPO&&
  pr.base?.ref==='main';
@@ -71,7 +72,7 @@ async function attestExactPr221({github,owner,repo}={}){
   if(original?.number!==221)return notApplicable();
   const mainSha=await getMain();
   const headSha=original?.head?.sha;
-  if(!/^[a-f0-9]{40}$/.test(mainSha||'')||!verifyPr(original,mainSha))return incomplete();
+  if(!/^[a-f0-9]{40}$/.test(mainSha||'')||!verifyPr(original,mainSha,headSha))return incomplete();
   const files=(await github.rest.pulls.listFiles({owner,repo,pull_number:221,per_page:100,page:1})).data;
   if(!verifyFiles(files))return incomplete();
   const sources=new Map();
@@ -87,7 +88,7 @@ async function attestExactPr221({github,owner,repo}={}){
   }
   if(!exactMaskDiff(sources.get('base:'+SOURCE),sources.get('head:'+SOURCE)))return incomplete();
   const final=(await github.rest.pulls.get({owner,repo,pull_number:221})).data;
-  if(!verifyPr(final,mainSha)||await getMain()!==mainSha)return incomplete();
+  if(!verifyPr(final,mainSha,headSha)||await getMain()!==mainSha)return incomplete();
   return Object.freeze({status:'AUTHENTICATED_EXACT_DELTA_MANUAL_REVIEW_REQUIRED',
    headSha,mainSha,baselineMainSha:BASELINE_MAIN,changedFiles:2,maskInsertions:2,
    provenanceAuthenticated:true,manualReviewRequired:true,
