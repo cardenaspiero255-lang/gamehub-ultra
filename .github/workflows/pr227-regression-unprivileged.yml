@@ -1,0 +1,38 @@
+name: PR227 exact head unprivileged independent regressions
+on:
+  push:
+    branches: [ci/pr227-regression-proof-20261024]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Checkout exact candidate without secrets
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: 6a78abd8b05f3e77d8ed07d83e93abadeeb7ac2e
+          persist-credentials: false
+      - name: Install JS parser without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute PR221 attestor and PR227 independent base-link tests
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "6a78abd8b05f3e77d8ed07d83e93abadeeb7ac2e"
+          node --check .github/scripts/ultra_sentinel_pr221_scope.cjs
+          node --check .github/scripts/ultra_sentinel_pr221_stage2.cjs
+          node --test .github/scripts/pr221_scope.test.cjs .github/scripts/pr221_stage2.test.cjs .github/scripts/pr221_protected_workflow.test.cjs
+      - name: Parse reviewer changes as untrusted data
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),acorn=require('acorn');
+          const {findCapabilities}=require('./.github/scripts/ultra_sentinel_capabilities.cjs');
+          for(const p of ['.github/scripts/ultra_sentinel_pr221_scope.cjs','.github/scripts/ultra_sentinel_pr221_stage2.cjs']){
+            const src=fs.readFileSync(p,'utf8');
+            const ast=acorn.parse(src,{ecmaVersion:'latest',sourceType:'script',locations:true,ranges:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true});
+            const caps=findCapabilities(ast);
+            console.log(p,'CAPABILITIES',caps.length);
+            if(caps.length)process.exitCode=2;
+          }
+          JS
