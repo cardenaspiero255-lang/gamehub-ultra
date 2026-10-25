@@ -41,17 +41,12 @@ class ColdRestartWorkflowTest(unittest.TestCase):
         self.assertIn("scripts/car29-verify-android-e2e.sh", src)
         self.assertIn("python3 -m unittest discover -s scripts/tests", src)
         self.assertIn("CAR29-E2E-receipt.json", src)
-        self.assertIn("persistentSessionReplayAndRollbackVerifiedAfterColdStart", src)
-        self.assertIn("receipt['gitSha']", src)
-        self.assertIn("receipt['result']", src)
         self.assertIn("github.sha", src)
 
     def test_missing_skipped_or_wrong_sha_receipt_cannot_certify(self):
         src = self.workflow
-        self.assertIn("receipt['result'] == 'PASS'", src)
-        self.assertIn("receipt['androidForceStopAndColdStart'] is True", src)
-        self.assertIn("receipt['persistentSessionReplayAndRollbackVerifiedAfterColdStart'] is True", src)
-        self.assertIn("receipt['gitSha'] == expected", src)
+        self.assertNotIn("python3 - <<", src)
+        self.assertIn("tools/verify_car29_restart_receipt.py", src)
         self.assertIn("if-no-files-found: error", src)
         self.assertIn("if: success()", src)
 
