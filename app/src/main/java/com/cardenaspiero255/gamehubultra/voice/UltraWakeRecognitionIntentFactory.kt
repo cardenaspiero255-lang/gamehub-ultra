@@ -8,7 +8,8 @@ internal object UltraWakeRecognitionIntentFactory {
     fun create(
         languageTag: String,
         mode: UltraWakeRecognitionMode,
-        persistentSource: UltraPersistentSpeechSource?
+        persistentSource: UltraPersistentSpeechSource?,
+        assistantName: String = "ultra"
     ): Intent =
         Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
@@ -57,7 +58,10 @@ internal object UltraWakeRecognitionIntentFactory {
                 )
                 putStringArrayListExtra(
                     RecognizerIntent.EXTRA_BIASING_STRINGS,
-                    arrayListOf("Ultra", "ultra")
+                    arrayListOf(
+                        "Ultra", "ultra",
+                        assistantName.takeIf(UltraAssistantIdentityPolicy::valid) ?: "ultra"
+                    ).distinct().let(::ArrayList)
                 )
             }
         }
