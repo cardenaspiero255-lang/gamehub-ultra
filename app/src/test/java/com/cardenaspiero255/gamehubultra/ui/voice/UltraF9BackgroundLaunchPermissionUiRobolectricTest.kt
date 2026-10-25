@@ -24,6 +24,9 @@ import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import com.cardenaspiero255.gamehubultra.voice.AndroidContinuousVoiceGateway
+import com.cardenaspiero255.gamehubultra.voice.UltraWakeNameStore
+import org.robolectric.shadows.ShadowSettings
+import kotlin.test.assertEquals
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,6 +55,9 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
 
     @After fun clearContinuousVoicePreference() {
         gateway.setEnabled(false)
+        RuntimeEnvironment.getApplication<android.app.Application>()
+            .getSharedPreferences("ultra_wake_identity_v1", 0).edit().clear().commit()
+        ShadowSettings.setCanDrawOverlays(false)
     }
 
     private fun runtime() = UltraUiRuntimeDependencies(
@@ -147,6 +153,53 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
 
         rule.onNodeWithText("Fuera de GameHub, Android puede impedir abrir juegos", substring = true)
             .assertDoesNotExist()
+        rule.onNodeWithText("Conceder «Mostrar sobre otras aplicaciones» (opcional)")
+            .assertDoesNotExist()
+    }
+
+    @Test fun typedChatRenamesAndAnswersLocallyWithoutSendingTheNameToAI() {
+        val appContext = RuntimeEnvironment.getApplication<android.app.Application>()
+        val identity = appContext.getSharedPreferences("ultra_wake_identity_v1", 0)
+        identity.edit().clear().commit()
+        val dependencies = runtime()
+        rule.setContent {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                LiveCard(dependencies)
+            }
+        }
+        rule.onNodeWithText("Escribir").performClick()
+        rule.onNodeWithTag("ultra-chat-private-draft", useUnmergedTree = true)
+            .performTextInput("Ultra, desde ahora te llamarás Juana")
+        rule.onNodeWithText("Enviar").performClick()
+        rule.waitUntil(15000) { UltraWakeNameStore(appContext).load() == "juana" }
+        rule.waitUntil(15000) {
+            rule.onAllNodesWithText(
+                "Entendido. Ahora me puedes llamar juana.", substring = true
+            ).fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithTag("ultra-chat-private-draft", useUnmergedTree = true)
+            .performTextInput("Juana, cómo te llamas")
+        rule.onNodeWithText("Enviar").performClick()
+        rule.waitUntil(15000) {
+            rule.onAllNodesWithText(
+                "Me llamo Juana, porque ese es el nombre que me pusiste.", substring = true
+            ).fetchSemanticsNodes().isNotEmpty()
+        }
+        assertEquals("juana", UltraWakeNameStore(appContext).load())
+        Mockito.verifyNoInteractions(dependencies.agentRouter, dependencies.queryExecutor)
+    }
+
+    @Test fun existingOverlayPermissionExplainsDirectLaunchWithoutRequestingAgain() {
+        ShadowSettings.setCanDrawOverlays(true)
+        gateway.setEnabled(true)
+        rule.setContent {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                LiveCard(runtime())
+            }
+        }
+        rule.onNodeWithText(
+            "Permiso opcional de apertura desde segundo plano concedido.", substring = true
+        ).assertExists()
         rule.onNodeWithText("Conceder «Mostrar sobre otras aplicaciones» (opcional)")
             .assertDoesNotExist()
     }
