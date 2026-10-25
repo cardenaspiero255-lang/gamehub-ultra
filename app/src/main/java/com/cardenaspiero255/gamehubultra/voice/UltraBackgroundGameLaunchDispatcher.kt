@@ -113,7 +113,10 @@ internal class UltraBackgroundGameLaunchDispatcher(
                 launchIntentForPackage = appContext.packageManager::getLaunchIntentForPackage,
                 visible = UltraAppVisibilityTracker::isVisible,
                 overlayAllowed = {
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                    // API 35+ additionally constrains the overlay exception
+                    // (the overlay must be visible). We do not create a window,
+                    // so never claim an overlay grant alone authorizes launching.
+                    Build.VERSION.SDK_INT in Build.VERSION_CODES.M..Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
                         Settings.canDrawOverlays(appContext)
                 },
                 notificationsAllowed = {
