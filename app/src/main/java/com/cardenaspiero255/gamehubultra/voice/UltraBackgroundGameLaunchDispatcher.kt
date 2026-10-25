@@ -111,7 +111,7 @@ internal class UltraBackgroundGameLaunchDispatcher(
             val appContext = context.applicationContext
             return UltraBackgroundGameLaunchDispatcher(
                 launchIntentForPackage = appContext.packageManager::getLaunchIntentForPackage,
-                visible = UltraAppVisibilityTracker::isVisible,
+                visible = { UltraAppVisibilityTracker.isVisible() },
                 overlayAllowed = {
                     // API 35+ additionally constrains the overlay exception
                     // (the overlay must be visible). We do not create a window,
