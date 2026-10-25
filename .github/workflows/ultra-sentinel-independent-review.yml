@@ -248,8 +248,17 @@ jobs:
               path.join(process.env.RUNNER_TEMP,'sentinel-independent','report.json'),'utf8'));
             if(report.scopedAccepted===true){
               const stored=report.scopedProtectedDelta;
-              const scopePath=path.resolve('.github/scripts/ultra_sentinel_pr172_scope.cjs');
+              // The job's trusted checkout is in GITHUB_WORKSPACE. The event
+              // may change the step's cwd; never resolve a reviewer from cwd.
+              const trustedRoot=process.env.GITHUB_WORKSPACE;
+              const scopePath=typeof trustedRoot==='string'&&path.isAbsolute(trustedRoot)?
+                path.resolve(trustedRoot,'.github/scripts/ultra_sentinel_pr172_scope.cjs'):'';
+              // A missing trusted checkout or malformed review target must
+              // FAIL CLOSED; diagnostics reveal only booleans, never secrets.
               if(![172,221].includes(report.pr)||!fs.existsSync(scopePath)){
+                core.warning('Trusted reviewer path check: workspace_absolute='+Boolean(scopePath)+
+                    ', module_exists='+fs.existsSync(scopePath)+
+                    ', cwd_matches_workspace='+(process.cwd()===trustedRoot));
                 core.setFailed('Post-upload attestation changed: missing trusted reviewer');return;
               }
               const {attestScopedPr172}=require(scopePath);
