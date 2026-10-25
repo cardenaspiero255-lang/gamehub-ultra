@@ -76,7 +76,9 @@ internal fun VoiceAssistantCard(
     startListeningRequest: Int = 0,
     // Internal-only seams for hermetic Compose privacy regressions.
     visualPickerOverride: (((android.net.Uri?) -> Unit) -> Unit)? = null,
-    visualOcrOverride: (suspend (android.content.Context, android.net.Uri, UltraVisualReadControl, android.os.CancellationSignal) -> String)? = null
+    visualOcrOverride: (suspend (android.content.Context, android.net.Uri, UltraVisualReadControl, android.os.CancellationSignal) -> String)? = null,
+    // Optional observation seam: tests drive the real microphone recognition listener.
+    voiceControllerObserver: ((VoiceAssistantController) -> Unit)? = null
 ) {
     val context = LocalContext.current
     var backgroundLaunchAllowed by remember(context) {
@@ -631,6 +633,7 @@ applyNetworkProfile = networkGaming::applyProfile
         )
         controller
     }
+    SideEffect { voiceControllerObserver?.invoke(voiceController) }
 
     fun requestOneShotListening() {
         if (!latestAssistantInputEnabled || listening) return
