@@ -31,7 +31,7 @@ internal object UltraWakeNamePolicy {
         if (UltraCognitionIntentPolicy.isNonExecutableDiscussion(transcript)) return null
         val normalized = VoiceCommandParser.stripLeadingAssistantInvocation(transcript)
         val patterns = listOf(
-            Regex("^(?:desde ahora )?te llamaras ([a-z]+)$"),
+            Regex("^desde ahora te llamaras ([a-z]+)$"),
             Regex("^quiero que te llames ([a-z]+)$"),
             Regex("^tu nombre sera ([a-z]+)$"),
             Regex("^cambia tu nombre a ([a-z]+)$")
@@ -71,8 +71,9 @@ internal class UltraWakeNameStore(context: Context) {
     )
 
     fun load(): String =
-        UltraWakeNamePolicy.validate(prefs.getString("active_name", null) ?: "")
-            ?: UltraWakeNamePolicy.DEFAULT_NAME
+        UltraWakeNamePolicy.validate(
+            runCatching { prefs.getString("active_name", null) }.getOrNull() ?: ""
+        ) ?: UltraWakeNamePolicy.DEFAULT_NAME
 
     fun save(requested: String): Boolean {
         val safe = UltraWakeNamePolicy.validate(requested) ?: return false
