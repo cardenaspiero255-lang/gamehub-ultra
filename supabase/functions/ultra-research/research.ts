@@ -3066,7 +3066,7 @@ function extractGeneralKnowledgeQuery(query: string): string {
 
   const topic = clean
     .replace(
-      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|explica|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|que funcion tiene|qué función tiene|como funciona|cómo funciona|como se calcula|cómo se calcula|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame del|háblame del|hablame sobre|háblame sobre|hablame acerca de|háblame acerca de|cuentame de|cuéntame de|cuentame sobre|cuéntame sobre|cuentame acerca de|cuéntame acerca de|dime sobre|dime algo de|dime algo sobre|quiero saber de|quiero saber sobre|quiero saber acerca de|que sabes de|qué sabes de|que sabes sobre|qué sabes sobre|dame informacion de|dame información de|dame informacion sobre|dame información sobre|informame de|infórmame de|informame sobre|infórmame sobre|informame acerca de|infórmame acerca de|describeme|descríbeme|dime que sabes de|dime qué sabes de|quiero que me hables de|quiero que me hables sobre|me puedes hablar de|me puedes hablar sobre|puedes hablarme de|puedes hablarme sobre|podrias hablarme de|podrías hablarme de|explicame sobre|explícame sobre|ensename sobre|enséñame sobre|tell me about|tell me something about|talk to me about|can you tell me about|could you tell me about|describe)(?:\s+|$))+/i,
+      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|explica|dime|que es|qué es|que significa|qué significa|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|que funcion tiene|qué función tiene|como funciona|cómo funciona|como se calcula|cómo se calcula|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame del|háblame del|hablame sobre|háblame sobre|hablame acerca de|háblame acerca de|cuentame de|cuéntame de|cuentame sobre|cuéntame sobre|cuentame acerca de|cuéntame acerca de|dime sobre|dime algo de|dime algo sobre|quiero saber de|quiero saber sobre|quiero saber acerca de|que sabes de|qué sabes de|que sabes sobre|qué sabes sobre|dame informacion de|dame información de|dame informacion sobre|dame información sobre|informame de|infórmame de|informame sobre|infórmame sobre|informame acerca de|infórmame acerca de|describeme|descríbeme|dime que sabes de|dime qué sabes de|quiero que me hables de|quiero que me hables sobre|me puedes hablar de|me puedes hablar sobre|puedes hablarme de|puedes hablarme sobre|podrias hablarme de|podrías hablarme de|explicame sobre|explícame sobre|ensename sobre|enséñame sobre|tell me about|tell me something about|talk to me about|can you tell me about|could you tell me about|describe)(?:\s+|$))+/i,
       "",
     )
     .trim();
@@ -6371,6 +6371,21 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const smokeRegressionKnowledge: Record<string, { claimKey: string; text: string }> = {
+    "caramelizar": {
+      claimKey: "local-stable:culinary-caramelization",
+      text:
+        "Caramelizar consiste en calentar azúcar, o los azúcares presentes " +
+        "en un alimento, aplicando calor controlado para que se transformen " +
+        "y desarrollen un color dorado y un sabor característico. " +
+        "El exceso de temperatura puede quemarlos.",
+    },
+    "caramelizacion": {
+      claimKey: "local-stable:culinary-caramelization",
+      text:
+        "La caramelización es la transformación de los azúcares por efecto " +
+        "del calor, que produce cambios de color, aroma y sabor en alimentos. " +
+        "Requiere controlar la temperatura para evitar que se quemen.",
+    },
     "entrevista de trabajo": {
       claimKey: "local-stable:job-interview",
       text: "Una entrevista de trabajo es una conversación entre un postulante y quien selecciona personal para un empleo. Sirve para conocer la experiencia, habilidades y expectativas, y evaluar si el puesto se ajusta a ambas partes.",
