@@ -148,6 +148,14 @@ object VoiceCommandParser {
     }
 
     private fun parseNetworkRequest(clean: String): NetworkVoiceRequest? {
+        // A competitive network mode is NOT an installed game's title.
+        // Match complete affirmative instructions only: no questions,
+        // descriptions, negations or accidental game-launch substrings.
+        if (Regex(
+                """^(?:activa|activar|pon|habilita|usa|enciende|enable|activate|set)\s+(?:(?:el|the)\s+)?(?:modo\s+)?competitivo$"""
+            ).matches(clean)) {
+            return NetworkVoiceRequest.COMPETITIVE
+        }
         if (hasExplicitLaunchIntent(clean)) return null
         return when {
             clean.contains("packet loss") ||
