@@ -111,3 +111,23 @@ test('final PR221 head may not change after exact Git blobs were authenticated',
  assert.equal(verifyPr({...valid,head:{...valid.head,sha:'c'.repeat(40)}},MAIN,verifiedHead),false);
  assert.equal(verifyPr(valid,MAIN,'d'.repeat(40)),false);
 });
+
+test('main-advance cutoff distinguishes historical from current PR221 runs',()=>{
+ const cutoff='2026-10-25T02:33:58Z';
+ const historical=run({id:301,run_started_at:'2026-10-25T02:30:00Z'});
+ const current=run({id:302,run_started_at:'2026-10-25T02:34:43Z'});
+ const judge=runs=>latestProtectedRun({total_count:runs.length,workflow_runs:runs},
+  ID,HEAD,MAIN,cutoff);
+ assert.throws(()=>judge([historical]),/HISTORICAL_PROTECTED_RUN/);
+ assert.equal(judge([historical,current]).id,302);
+ assert.throws(()=>judge([historical,current,run({id:303,
+  run_started_at:'2026-10-25T02:36:00Z',conclusion:'failure'})]),
+  /LATEST_PROTECTED_RUN_NOT_SUCCESS/);
+ assert.throws(()=>judge([historical,current,run({id:304,
+  run_started_at:'2026-10-25T02:37:00Z',status:'queued',conclusion:null})]),
+  /LATEST_PROTECTED_RUN_NOT_SUCCESS/);
+ assert.throws(()=>judge([historical,run({id:305,
+  run_started_at:'2026-10-25T02:38:00Z',pull_requests:[]})]),/UNTRUSTED_RUN_IDENTITY/);
+ assert.throws(()=>latestProtectedRun({total_count:1,workflow_runs:[current]},
+  ID,HEAD,MAIN,'malformed-date'),/HISTORICAL_PROTECTED_RUN/);
+});
