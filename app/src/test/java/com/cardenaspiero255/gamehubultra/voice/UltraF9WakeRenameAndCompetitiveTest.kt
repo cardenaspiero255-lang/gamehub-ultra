@@ -82,6 +82,7 @@ class UltraF9WakeRenameAndCompetitiveTest {
             UltraWakeNamePolicy.canonicalizeInvocation("Roberto desde ahora te llamaras Ultra", "roberto")
         ))
         assertNull(UltraWakeNamePolicy.requestedName("Ultra, que pasaria si te llamaras Roberto"))
+        assertNull(UltraWakeNamePolicy.requestedName("Ultra, te llamaras Roberto?"))
         assertNull(UltraWakeNamePolicy.requestedName("No quiero que te llames Roberto"))
     }
 
