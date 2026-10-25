@@ -90,4 +90,95 @@ class UltraF9JuanaStopRecoveryTest {
         assertFalse(guard.isPlaybackActive())
         assertFalse(field<Boolean>(service, "stopped"))
     }
+    @Test
+    fun persistentCaptureHandoffReleasesRecognizerBeforeTheStopOnlyWindow() {
+        val service = UltraWakeService()
+        val coordinator: UltraWakeCommandCoordinator = field(service, "commandCoordinator")
+        val recognizer = Mockito.mock(android.speech.SpeechRecognizer::class.java)
+        assertTrue(coordinator.tryBeginCommand())
+        setField(service, "persistentSessionActive", true)
+        setField(service, "recognizer", recognizer)
+        setField(service, "recognitionGeneration", 10L)
+
+        val handoff = UltraWakeService::class.java.getDeclaredMethod(
+            "retirePersistentCaptureBeforeSpeaking"
+        ).apply { isAccessible = true }
+        handoff.invoke(service)
+
+        Mockito.verify(recognizer).cancel()
+        Mockito.verify(recognizer).destroy()
+        assertFalse(field<Boolean>(service, "persistentSessionActive"))
+        assertEquals(null, field<android.speech.SpeechRecognizer?>(service, "recognizer"))
+        assertEquals(11L, field<Long>(service, "recognitionGeneration"))
+        assertTrue(coordinator.isCommandRunning())
+        assertFalse(coordinator.isRecognitionActive())
+    }
+
+    @Test
+    fun irrelevantFinalRecognitionDuringTtsReopensStopListenerWithoutLaunchingGame() {
+        val service = UltraWakeService()
+        val handler = Mockito.mock(Handler::class.java)
+        val recognizer = Mockito.mock(android.speech.SpeechRecognizer::class.java)
+        val coordinator: UltraWakeCommandCoordinator = field(service, "commandCoordinator")
+        val guard: UltraWakePlaybackGuard = field(service, "playbackGuard")
+        val queue: UltraWakeCommandQueue = field(service, "commandQueue")
+        setField(service, "mainHandler", handler)
+        setField(service, "recognizer", recognizer)
+        setField(service, "recognitionGeneration", 20L)
+        assertTrue(coordinator.tryBeginCommand())
+        guard.onPlaybackStarted("La explicación sigue sonando.")
+        assertTrue(coordinator.tryStartSpeechInterruptionRecognition())
+
+        val method = UltraWakeService::class.java.getDeclaredMethod(
+            "listenerForGeneration",
+            Long::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType
+        ).apply { isAccessible = true }
+        val listener = method.invoke(service, 20L, true) as android.speech.RecognitionListener
+        val result = android.os.Bundle().apply {
+            putStringArrayList(
+                android.speech.SpeechRecognizer.RESULTS_RECOGNITION,
+                arrayListOf("Ultra abre Brawl Stars")
+            )
+        }
+        listener.onResults(result)
+
+        Mockito.verify(recognizer).cancel()
+        Mockito.verify(recognizer).destroy()
+        Mockito.verify(handler).postDelayed(
+            Mockito.any(Runnable::class.java),
+            Mockito.eq(280L)
+        )
+        assertEquals(21L, field<Long>(service, "recognitionGeneration"))
+        assertFalse(coordinator.isRecognitionActive())
+        assertTrue(coordinator.isCommandRunning())
+        assertTrue(guard.isPlaybackActive())
+        assertEquals(null, queue.poll())
+    }
+
+    @Test
+    fun retiredStopListenerDoesNotProcessLateVoiceActions() {
+        val service = UltraWakeService()
+        val coordinator: UltraWakeCommandCoordinator = field(service, "commandCoordinator")
+        val queue: UltraWakeCommandQueue = field(service, "commandQueue")
+        assertTrue(coordinator.tryBeginCommand())
+        val method = UltraWakeService::class.java.getDeclaredMethod(
+            "listenerForGeneration",
+            Long::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType
+        ).apply { isAccessible = true }
+        setField(service, "recognitionGeneration", 30L)
+        val oldListener = method.invoke(service, 29L, true) as android.speech.RecognitionListener
+        val result = android.os.Bundle().apply {
+            putStringArrayList(
+                android.speech.SpeechRecognizer.RESULTS_RECOGNITION,
+                arrayListOf("Juana, abre BS")
+            )
+        }
+        oldListener.onResults(result)
+        assertTrue(coordinator.isCommandRunning())
+        assertEquals(30L, field<Long>(service, "recognitionGeneration"))
+        assertEquals(null, queue.poll())
+    }
+
 }

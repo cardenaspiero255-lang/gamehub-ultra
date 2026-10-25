@@ -4,6 +4,9 @@ import android.app.Activity
 import android.app.Application
 import android.app.Notification
 import android.app.NotificationManager
+import android.Manifest
+import android.os.Build
+import org.robolectric.Shadows
 import android.content.Intent
 import android.os.Bundle
 import com.cardenaspiero255.gamehubultra.MainActivity
@@ -16,7 +19,6 @@ import org.junit.runner.RunWith
 import org.mockito.Mockito
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
 /**
@@ -110,4 +112,58 @@ class UltraF9BackgroundLaunchAndroidIntegrationTest {
             dispatcher.launch(packageName)
         )
     }
+    @Test
+    fun installedGameLauncherInBackgroundProducesUserTappableNotification() {
+        val app = RuntimeEnvironment.getApplication()
+        val installedPackage = app.packageName
+        assertNotNull(app.packageManager.getLaunchIntentForPackage(installedPackage))
+        val manager = app.getSystemService(NotificationManager::class.java)
+        manager.cancelAll()
+        Shadows.shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        assertFalse(UltraAppVisibilityTracker.isVisible())
+        val outcome = UltraBackgroundGameLaunchDispatcher.from(app).launch(installedPackage)
+        assertEquals(UltraBackgroundGameLaunchOutcome.TAP_REQUIRED, outcome)
+        val id = 24100 + (installedPackage.hashCode() and 0x0FFF)
+        val posted = assertNotNull(Shadows.shadowOf(manager).getNotification(id))
+        assertNotNull(posted.contentIntent)
+        assertEquals("GameHub Ultra: abrir juego",
+            posted.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+    }
+
+    @Test
+    fun realFactoryDoesNotCreateLaunchNotificationWithoutAndroid13Permission() {
+        val app = RuntimeEnvironment.getApplication()
+        val installedPackage = app.packageName
+        assertNotNull(app.packageManager.getLaunchIntentForPackage(installedPackage))
+        val manager = app.getSystemService(NotificationManager::class.java)
+        manager.cancelAll()
+        Shadows.shadowOf(app).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        assertFalse(UltraAppVisibilityTracker.isVisible())
+        assertEquals(
+            UltraBackgroundGameLaunchOutcome.NOTIFICATION_PERMISSION_REQUIRED,
+            UltraBackgroundGameLaunchDispatcher.from(app).launch(installedPackage)
+        )
+        val id = 24100 + (installedPackage.hashCode() and 0x0FFF)
+        assertEquals(null, Shadows.shadowOf(manager).getNotification(id))
+    }
+
+    @Test
+    fun foregroundAppFactoryRequestsLauncherButNeverClaimsObservedOpening() {
+        val app = RuntimeEnvironment.getApplication()
+        val installedPackage = app.packageName
+        assertNotNull(app.packageManager.getLaunchIntentForPackage(installedPackage))
+        val tracker = UltraAppVisibilityTracker()
+        val activity = Mockito.mock(Activity::class.java)
+        tracker.onActivityStarted(activity)
+        try {
+            assertEquals(
+                UltraBackgroundGameLaunchOutcome.REQUESTED,
+                UltraBackgroundGameLaunchDispatcher.from(app).launch(installedPackage)
+            )
+        } finally {
+            tracker.onActivityStopped(activity)
+        }
+        assertFalse(UltraAppVisibilityTracker.isVisible())
+    }
+
 }
