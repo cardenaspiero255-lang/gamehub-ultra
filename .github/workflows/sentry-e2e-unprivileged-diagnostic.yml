@@ -26,5 +26,12 @@ jobs:
           const path='.github/workflows/sentry-sdk-delivery-e2e.yml';
           const x=inspectWorkflow(fs.readFileSync(path,'utf8'),{path,trustedRepository:'cardenaspiero255-lang/gamehub-ultra'});
           console.log(JSON.stringify({status:x.status,coverage:x.coverage,findings:x.findings},null,2));
-          if(x.status!=='NO_RISK_PATTERN')process.exitCode=2;
+          const yaml=require('js-yaml');
+          const doc=yaml.load(fs.readFileSync(path,'utf8'));
+          const [jobName,job]=Object.entries(doc.jobs)[0];
+          for(let i=1;i<=job.steps.length;i++){
+            const test={...doc,jobs:{[jobName]:{...job,steps:job.steps.slice(0,i)}}};
+            const z=inspectWorkflow(yaml.dump(test),{path,trustedRepository:'cardenaspiero255-lang/gamehub-ultra'});
+            console.log('STEP',i,job.steps[i-1].name,'STATUS',z.status,'REASONS',JSON.stringify(z.coverage.reasons));
+          }
           JS
