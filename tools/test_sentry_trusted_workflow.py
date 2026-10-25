@@ -22,9 +22,9 @@ class TrustedSentryWorkflowContract(unittest.TestCase):
         self.assertIn("-e sentry_e2e true",src)
         self.assertIn("grep -q '^OK (1 test)'",src)
         self.assertIn("EVENT_ID=[a-f0-9]{32}",src)
-        self.assertIn("tools/sentry_e2e_verify.py",src)
-        self.assertIn("--event-id \"$EVENT_ID\"",src)
-        self.assertIn("--release \"$EXPECTED_RELEASE\"",src)
+        self.assertIn("python3 tools/sentry_e2e_verify.py --org gamehub-ultra-1t --project gamehub-ultra",src)
+        self.assertIn("SENTRY_E2E_EVENT_ID: ${{ steps.capture.outputs.event_id }}",src)
+        self.assertIn("SENTRY_RELEASE: gamehub-ultra@${{ github.sha }}",src)
         self.assertNotIn("continue-on-error: true",src)
     def test_secrets_only_on_trusted_build_and_readback(self):
         src=self.src
