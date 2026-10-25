@@ -112,6 +112,11 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
             .assertExists()
         rule.onNodeWithText("Conceder «Mostrar sobre otras aplicaciones» (opcional)")
             .assertExists()
+            .performScrollTo()
+            .performClick()
+        // The explicit button must use Android's settings contract, or show
+        // the in-app fallback if this Robolectric host has no settings handler.
+        // Neither path is a permission grant and neither starts a game.
     }
 
     @Test fun disablingContinuousListeningHidesBackgroundPermissionInstructions() {
