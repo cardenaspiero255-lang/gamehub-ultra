@@ -69,6 +69,13 @@ class UltraWakeService : Service() {
     private val commandCoordinator = UltraWakeCommandCoordinator()
     private val commandQueue = UltraWakeCommandQueue()
     private val voiceConversationLedger = UltraVoiceConversationLedger(maxEntries = 8)
+    private val assistantNameStore by lazy { UltraAssistantNameStore(applicationContext) }
+
+    private fun activeAssistantName(): String =
+        runCatching { assistantNameStore.currentName() }.getOrDefault("ultra")
+
+    private fun canonicalWakeCommand(transcript: String): String? =
+        UltraAssistantIdentityPolicy.canonicalCommand(transcript, activeAssistantName())
     private val speechGeneration = UltraWakeSpeechGeneration()
     private val playbackGuard = UltraWakePlaybackGuard()
     private val speechInitGate = UltraTtsInitializationGate()
@@ -244,7 +251,8 @@ class UltraWakeService : Service() {
             val intent = UltraWakeRecognitionIntentFactory.create(
                 languageTag = recognitionLanguageTag,
                 mode = requestedMode,
-                persistentSource = persistentSpeechSource
+                persistentSource = persistentSpeechSource,
+                assistantName = activeAssistantName()
             )
             speech.startListening(intent)
             if (
@@ -288,7 +296,7 @@ class UltraWakeService : Service() {
                 .orEmpty()
             if (UltraWakePartialStopPolicy.shouldStop(
                     playbackActive = playbackGuard.isPlaybackActive(),
-                    alternatives = alternatives
+                    alternatives = alternatives.map { canonicalWakeCommand(it) ?: it }
                 )
             ) {
                 if (cancelPendingSpeechAndResume()) return
@@ -392,7 +400,7 @@ class UltraWakeService : Service() {
                     val alternatives = results?.getStringArrayList(RESULTS_RECOGNITION).orEmpty()
                     val stopRequested = UltraWakePartialStopPolicy.shouldStop(
                         playbackActive = playbackGuard.isPlaybackActive(),
-                        alternatives = alternatives
+                        alternatives = alternatives.map { canonicalWakeCommand(it) ?: it }
                     )
                     if (stopRequested) {
                         listener.onPartialResults(results)
@@ -440,11 +448,12 @@ class UltraWakeService : Service() {
             confidenceScores = confidenceScores,
             prefer = ::containsWakeWord
         ).orEmpty()
+        val effectiveTranscript = canonicalWakeCommand(transcript) ?: transcript
 
         when (
             UltraWakeBargeInPolicy.decide(
                 playbackActive = playbackGuard.isPlaybackActive(),
-                transcript = transcript,
+                transcript = effectiveTranscript,
                 playbackEcho = playbackGuard.isLikelyPlaybackEcho(transcript)
             )
         ) {
@@ -506,7 +515,8 @@ class UltraWakeService : Service() {
     }
 
     private fun containsWakeWord(transcript: String): Boolean =
-        UltraWakeWordMatcher.contains(transcript)
+        canonicalWakeCommand(transcript) != null ||
+            UltraWakeWordMatcher.contains(transcript)
 
     private val commandRuntime by lazy {
         UltraWakeCommandRuntime(
@@ -536,7 +546,25 @@ class UltraWakeService : Service() {
                 ) {
                     val response =
                         if (UltraPrivacyEpoch.isCurrent(privacyEpoch)) {
-                            UltraWakeFailureGuard.run { commandRuntime.execute(transcript) }
+                            UltraWakeFailureGuard.run {
+                                val nameAtDispatch = activeAssistantName()
+                                val renamedTo = UltraAssistantIdentityPolicy.requestedName(
+                                    transcript, nameAtDispatch
+                                )
+                                if (renamedTo != null) {
+                                    if (assistantNameStore.saveName(renamedTo)) {
+                                        "Entendido. Desde ahora me llamaré ${renamedTo.replaceFirstChar { it.uppercase() }}."
+                                    } else {
+                                        "No pude guardar el nombre. Seguiré llamándome ${nameAtDispatch.replaceFirstChar { it.uppercase() }}."
+                                    }
+                                } else {
+                                    commandRuntime.execute(
+                                        UltraAssistantIdentityPolicy.canonicalCommand(
+                                            transcript, nameAtDispatch
+                                        ) ?: transcript
+                                    )
+                                }
+                            }
                         } else ""
                     mainHandler.post {
                         if (
