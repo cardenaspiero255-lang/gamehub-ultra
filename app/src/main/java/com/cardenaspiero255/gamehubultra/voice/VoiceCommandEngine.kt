@@ -274,10 +274,12 @@ object VoiceCommandEngine :
                     )
                 } else {
                     val outcome =
-                        if (command.request == NetworkVoiceRequest.OPTIMIZE) {
-                            applyNetworkProfile(snapshot.recommendedProfile)
-                        } else {
-                            NetworkOptimizationOutcome.NOT_REQUESTED
+                        when (command.request) {
+                            NetworkVoiceRequest.OPTIMIZE ->
+                                applyNetworkProfile(snapshot.recommendedProfile)
+                            NetworkVoiceRequest.COMPETITIVE ->
+                                applyNetworkProfile(NetworkGameProfile.COMPETITIVE)
+                            else -> NetworkOptimizationOutcome.NOT_REQUESTED
                         }
                     VoiceActionResult.NetworkReport(
                         request = command.request,
