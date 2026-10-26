@@ -19,13 +19,15 @@ def select_run(runs: list[dict], sha: str, repository: str) -> int | None:
             item.get("event") not in {"push", "workflow_dispatch"}):
             continue
         matches.append(item)
-    complete = [r for r in matches if r.get("status") == "completed" and r.get("conclusion") == "success"]
-    if complete:
-        return max(int(r["id"]) for r in complete)
-    failures = [r for r in matches if r.get("status") == "completed" and r.get("conclusion") not in {"success", None}]
-    if failures and not any(r.get("status") != "completed" for r in matches):
-        raise RuntimeError("Exact-SHA Coverage failed or was cancelled; refusing Sonar import")
-    return None
+    if not matches:
+        return None
+    # CAR-29: historical success cannot overrule a newer failed or pending run.
+    newest = max(matches, key=lambda item: int(item["id"]))
+    if newest.get("status") != "completed":
+        return None
+    if newest.get("conclusion") != "success":
+        raise RuntimeError("Latest exact-SHA Coverage failed or was cancelled; refusing Sonar import")
+    return int(newest["id"])
 
 
 def main() -> int:

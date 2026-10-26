@@ -32,6 +32,13 @@ class TestSelect(unittest.TestCase):
     def test_rejects_malformed_missing_identity(self):
         self.assertIsNone(self.choose([dict(run(4), head_repository=None)]))
 
+    def test_stale_success_must_not_mask_newer_failed_coverage(self):
+        with self.assertRaises(RuntimeError):
+            self.choose([run(9, conclusion="failure"), run(5)])
+
+    def test_stale_success_must_not_mask_current_in_progress_coverage(self):
+        self.assertIsNone(self.choose([run(9, status="in_progress", conclusion=None), run(5)]))
+
     def test_prioritizes_latest_completed_success(self):
         self.assertEqual(self.choose([run(5), run(9)]), 9)
 
