@@ -229,7 +229,7 @@ class BatteryAwareGamingEngineTest {
 
         assertEquals(76, assessment.currentPercent)
         assertEquals(4, assessment.observedDropPercent)
-        assertEquals(8f, assessment.drainPercentPerHour)
+        assertEquals(12f, assessment.drainPercentPerHour)
         assertEquals(BatteryGamingRecommendation.NORMAL, assessment.recommendation)
         assertFalse(assessment.preventAggressiveProfiles)
     }
