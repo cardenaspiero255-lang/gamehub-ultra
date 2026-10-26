@@ -45,11 +45,15 @@ class BatteryAwareGamingEngine(
         val currentBatteryWindow = ordered
             .asReversed()
             .takeWhile { it.batteryCharging != true }
-        val currentPercent = latest?.batteryPercent
-            ?: currentBatteryWindow.firstNotNullOfOrNull { it.batteryPercent }
+        // A malformed or unavailable Android reading must not become a
+        // battery warning, drain estimate or profile-change recommendation.
+        val currentPercent = latest?.batteryPercent?.takeIf { it in 0..100 }
+            ?: currentBatteryWindow.firstNotNullOfOrNull { sample ->
+                sample.batteryPercent?.takeIf { it in 0..100 }
+            }
 
         val drainWindow = currentBatteryWindow
-            .filter { it.batteryPercent != null }
+            .filter { it.batteryPercent in 0..100 }
             .asReversed()
 
         val firstDrainSample = drainWindow.firstOrNull()
