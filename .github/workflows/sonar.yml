@@ -2,9 +2,9 @@ name: SonarQube Cloud Analysis
 # Optional only when discovery completes and confirms no configured Sonar project.
 
 on:
-  workflow_run:
-    workflows: ["Unit Test Coverage"]
-    types: [completed]
+  workflow_dispatch:
+  push:
+    branches: ["main"]
 
 permissions:
   contents: read
@@ -16,39 +16,30 @@ concurrency:
 
 jobs:
   sonar:
-    # This job has SONAR_TOKEN. Never process PR coverage or foreign-repository artifacts.
-    if: >-
-      ${{ github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.head_repository.full_name == github.repository &&
-          github.event.workflow_run.head_branch == 'main' &&
-          (github.event.workflow_run.event == 'push' ||
-           github.event.workflow_run.event == 'workflow_dispatch') }}
+    # Only trusted main pushes or explicit main dispatches can use SONAR_TOKEN.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       SONAR_PROJECT_KEY_OVERRIDE: ${{ vars.SONAR_PROJECT_KEY }}
       SONAR_ORGANIZATION_OVERRIDE: ${{ vars.SONAR_ORGANIZATION }}
       SONAR_HOST_URL_OVERRIDE: ${{ vars.SONAR_HOST_URL }}
       REPO_NAME: ${{ github.event.repository.name }}
       REPO_OWNER: ${{ github.repository_owner }}
-      VERIFIED_COVERAGE_SHA: ${{ github.event.workflow_run.head_sha }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
 
-      - name: Verify coverage provenance matches the exact checkout
+      - name: Verify trusted main commit for scanning
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$VERIFIED_COVERAGE_SHA" || {
-            echo "::error::Coverage source SHA does not match the checkout."
-            exit 1
-          }
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Verify Sonar token is configured
         env:
@@ -278,6 +269,17 @@ jobs:
           )
           PY
 
+      - name: Locate exact successful main Coverage run
+        id: coverage
+        if: steps.discover.outputs.found == 'true'
+        env:
+          GH_COVERAGE_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s .github/scripts -p "test_find_sonar_coverage_run.py" -v
+          python3 .github/scripts/find_sonar_coverage_run.py
+
       - name: Set up JDK 17
         if: steps.discover.outputs.found == 'true'
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -312,7 +314,7 @@ jobs:
           name: gamehub-ultra-coverage-report
           path: app/build/reports/coverage/test/debug
           github-token: ${{ github.token }}
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ steps.coverage.outputs.run_id }}
 
       - name: Validate JaCoCo report before scanner import
         if: steps.discover.outputs.found == 'true'
