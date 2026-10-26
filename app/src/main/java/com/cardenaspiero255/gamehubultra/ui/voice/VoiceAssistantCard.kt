@@ -202,6 +202,28 @@ internal fun VoiceAssistantCard(
             maxEntries = MAX_CHAT_HISTORY
         )
 
+        // Identity commands are local, deterministic settings operations.
+        // Resolve them at the user action boundary, before asynchronous AI
+        // dispatch; no provider, game launcher or network dependency is needed.
+        val localIdentityAnswer = UltraWakeLocalIdentityActions.handle(context, message)
+        if (localIdentityAnswer != null) {
+            if (!UltraPrivacyEpoch.isCurrent(
+                    draftOriginAtSend?.privacyEpoch ?: UltraPrivacyEpoch.current()
+                ) || latestAiContext.selectedGamePackage != originatingGamePackage
+            ) return
+            chatMessage = ""
+            visualDraftOrigin = null
+            latestOnConversationChanged(
+                UltraConversationPolicy.append(
+                    history = withUser,
+                    entry = "Ultra: " + localIdentityAnswer,
+                    maxEntries = MAX_CHAT_HISTORY
+                )
+            )
+            response = localIdentityAnswer
+            return
+        }
+
         val failureAnswer = "No pude completar la consulta. Inténtalo de nuevo."
         val submission = queryRunner.launch(
             // Runner rechecks this immutable consent epoch during admission and
@@ -225,22 +247,6 @@ internal fun VoiceAssistantCard(
                 }
             }
         ) {
-            // In-app typed commands must share the local identity settings
-            // route with the foreground service, never query an LLM to rename.
-            queryRunner.requireCurrentDispatch(originatingGamePackage)
-            val localIdentityAnswer = UltraWakeLocalIdentityActions.handle(context, message)
-            if (localIdentityAnswer != null) {
-                queryRunner.requireCurrentDispatch(originatingGamePackage)
-                val published = queryRunner.appendAssistantIfCurrentGame(
-                    originatingGamePackage = originatingGamePackage,
-                    assistantEntry = "Ultra: " + localIdentityAnswer,
-                    maxEntries = MAX_CHAT_HISTORY
-                )
-                if (published) {
-                    withContext(Dispatchers.Main) { response = localIdentityAnswer }
-                }
-                return@launch
-            }
             val deviceStatus = VoiceDeviceStatusProvider.read(context)
             queryRunner.requireCurrentDispatch(originatingGamePackage)
             val route = agentRouter.route(
@@ -427,6 +433,40 @@ internal fun VoiceAssistantCard(
                 val originatingGamePackage = capturedVoiceScope.gamePackage
                 val turnPrivacyEpoch = UltraPrivacyEpoch.current()
                 transcript = spokenText
+                if (
+                    !UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch) ||
+                    !isUltraVoiceTurnScopeCurrent(
+                        captured = capturedVoiceScope,
+                        assistantInputReady = latestAssistantInputEnabled,
+                        currentGamePackage = latestAiContext.selectedGamePackage
+                    )
+                ) return@transcript
+                // No background coroutine or LLM is required to rename Ultra or
+                // answer its current name. Use the same local handler as chat.
+                val localIdentityAnswer = UltraWakeLocalIdentityActions.handle(context, spokenText)
+                if (localIdentityAnswer != null) {
+                    val withUser = UltraConversationPolicy.append(
+                        history = latestConversation,
+                        entry = "Tú: " + spokenText,
+                        maxEntries = MAX_CHAT_HISTORY
+                    )
+                    val withAnswer = UltraConversationPolicy.append(
+                        history = withUser,
+                        entry = "Ultra: " + localIdentityAnswer,
+                        maxEntries = MAX_CHAT_HISTORY
+                    )
+                    if (UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch)) {
+                        UltraVoiceResultPublisher.publishIfCurrentGame(
+                            originatingGamePackage = originatingGamePackage,
+                            currentGamePackage = latestAiContext.selectedGamePackage
+                        ) {
+                            latestOnConversationChanged(withAnswer)
+                            response = localIdentityAnswer
+                            controller.speak(localIdentityAnswer)
+                        }
+                    }
+                    return@transcript
+                }
                 activeVoiceTurn = scope.launch(Dispatchers.IO) {
                     if (
                         !UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch) ||
@@ -458,31 +498,6 @@ internal fun VoiceAssistantCard(
                         }
                     }
 
-                    // Resolve renaming and name questions locally before
-                    // conversational routing; the old path replied "Soy Ultra"
-                    // without persisting the requested new name.
-                    val localIdentityAnswer =
-                        UltraWakeLocalIdentityActions.handle(context, spokenText)
-                    if (localIdentityAnswer != null) {
-                        val withAnswer = UltraConversationPolicy.append(
-                            history = withUser,
-                            entry = "Ultra: " + localIdentityAnswer,
-                            maxEntries = MAX_CHAT_HISTORY
-                        )
-                        kotlinx.coroutines.withContext(Dispatchers.Main) {
-                            if (UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch)) {
-                                UltraVoiceResultPublisher.publishIfCurrentGame(
-                                    originatingGamePackage = originatingGamePackage,
-                                    currentGamePackage = latestAiContext.selectedGamePackage
-                                ) {
-                                    latestOnConversationChanged(withAnswer)
-                                    response = localIdentityAnswer
-                                    controller.speak(localIdentityAnswer)
-                                }
-                            }
-                        }
-                        return@launch
-                    }
                     val voiceStatus = VoiceDeviceStatusProvider.read(context)
                     val route = agentRouter.route(
                         UltraAgentRoutingRequest(
