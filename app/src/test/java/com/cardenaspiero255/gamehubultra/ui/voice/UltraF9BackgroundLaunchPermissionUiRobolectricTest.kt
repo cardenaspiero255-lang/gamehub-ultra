@@ -55,7 +55,7 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
 
     @After fun clearContinuousVoicePreference() {
         gateway.setEnabled(false)
-        RuntimeEnvironment.getApplication<android.app.Application>()
+        RuntimeEnvironment.getApplication()
             .getSharedPreferences("ultra_wake_identity_v1", 0).edit().clear().commit()
         ShadowSettings.setCanDrawOverlays(false)
     }
@@ -81,7 +81,10 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
     )
 
     @Composable
-    private fun LiveCard(\n        dependencies: UltraUiRuntimeDependencies,\n        onVoiceController: ((com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController) -> Unit)? = null\n    ) {
+    private fun LiveCard(
+        dependencies: UltraUiRuntimeDependencies,
+        onVoiceController: ((com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController) -> Unit)? = null
+    ) {
         var conversation by remember { mutableStateOf(emptyList<String>()) }
         val runner = remember {
             UltraAssistantQueryRunner(
@@ -103,7 +106,8 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
             queryRunner = runner,
             conversation = conversation,
             onConversationChanged = { conversation = it },
-            assistantInputEnabled = true
+            assistantInputEnabled = true,
+            voiceControllerObserver = onVoiceController
         )
     }
 
@@ -158,7 +162,7 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
     }
 
     @Test fun typedChatRenamesAndAnswersLocallyWithoutSendingTheNameToAI() {
-        val appContext = RuntimeEnvironment.getApplication<android.app.Application>()
+        val appContext = RuntimeEnvironment.getApplication()
         val identity = appContext.getSharedPreferences("ultra_wake_identity_v1", 0)
         identity.edit().clear().commit()
         val dependencies = runtime()
@@ -205,7 +209,7 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
     }
 
     @Test fun realMicrophoneTranscriptRenamesAndAnswersWithoutConversationalRouting() {
-        val context = RuntimeEnvironment.getApplication<android.app.Application>()
+        val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("ultra_wake_identity_v1", 0).edit().clear().commit()
         val dependencies = runtime()
         var activeController: com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController? = null
