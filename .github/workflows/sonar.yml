@@ -2,12 +2,13 @@ name: SonarQube Cloud Analysis
 # Optional only when discovery completes and confirms no configured Sonar project.
 
 on:
-  workflow_dispatch:
-  push:
-    branches: ["main"]
+  workflow_run:
+    workflows: ["Unit Test Coverage"]
+    types: [completed]
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: sonar-${{ github.ref }}
@@ -15,6 +16,13 @@ concurrency:
 
 jobs:
   sonar:
+    # This job has SONAR_TOKEN. Never process PR coverage or foreign-repository artifacts.
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_repository.full_name == github.repository &&
+          github.event.workflow_run.head_branch == 'main' &&
+          (github.event.workflow_run.event == 'push' ||
+           github.event.workflow_run.event == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -23,13 +31,24 @@ jobs:
       SONAR_HOST_URL_OVERRIDE: ${{ vars.SONAR_HOST_URL }}
       REPO_NAME: ${{ github.event.repository.name }}
       REPO_OWNER: ${{ github.repository_owner }}
+      VERIFIED_COVERAGE_SHA: ${{ github.event.workflow_run.head_sha }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
+
+      - name: Verify coverage provenance matches the exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VERIFIED_COVERAGE_SHA" || {
+            echo "::error::Coverage source SHA does not match the checkout."
+            exit 1
+          }
 
       - name: Verify Sonar token is configured
         env:
@@ -286,6 +305,24 @@ jobs:
         if: steps.discover.outputs.found == 'true'
         run: gradle :app:compileDebugKotlin --stacktrace
 
+      - name: Download JaCoCo report from the exact successful coverage run
+        if: steps.discover.outputs.found == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gamehub-ultra-coverage-report
+          path: app/build/reports/coverage/test/debug
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Validate JaCoCo report before scanner import
+        if: steps.discover.outputs.found == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s .github/scripts -p "test_verify_sonar_jacoco.py" -v
+          python3 .github/scripts/verify_sonar_jacoco.py \
+            --report app/build/reports/coverage/test/debug/report.xml
+
       - name: Run SonarQube Cloud analysis
         if: steps.discover.outputs.found == 'true'
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6
@@ -299,4 +336,6 @@ jobs:
             -Dsonar.sources=app/src/main
             -Dsonar.tests=app/src/test
             -Dsonar.java.binaries=app/build/tmp/kotlin-classes/debug
+            -Dsonar.coverage.jacoco.xmlReportPaths=app/build/reports/coverage/test/debug/report.xml
+            -Dsonar.qualitygate.wait=true
             -Dsonar.exclusions=**/build/**,**/*.b64
