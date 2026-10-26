@@ -872,6 +872,7 @@ applyNetworkProfile = networkGaming::applyProfile
             },
             confirmButton = {
                 Button(
+                    modifier = Modifier.testTag("ultra-chat-send"),
                     onClick = ::sendTypedChatMessage,
                     enabled = assistantInputEnabled && chatMessage.isNotBlank() && !chatSending &&
                         UltraVisualDraftPolicy.canSend(

@@ -174,7 +174,7 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
         rule.onNodeWithText("Escribir").performClick()
         rule.onNodeWithTag("ultra-chat-private-draft", useUnmergedTree = true)
             .performTextInput("Ultra, desde ahora te llamarás Juana")
-        rule.onNodeWithText("Enviar").performClick()
+        rule.onNodeWithTag("ultra-chat-send").performClick()
         rule.waitUntil(15000) { UltraWakeNameStore(appContext).load() == "juana" }
         rule.waitUntil(15000) {
             rule.onAllNodesWithText(
@@ -183,7 +183,7 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
         }
         rule.onNodeWithTag("ultra-chat-private-draft", useUnmergedTree = true)
             .performTextInput("Juana, cómo te llamas")
-        rule.onNodeWithText("Enviar").performClick()
+        rule.onNodeWithTag("ultra-chat-send").performClick()
         rule.waitUntil(15000) {
             rule.onAllNodesWithText(
                 "Me llamo Juana, porque ese es el nombre que me pusiste.", substring = true
@@ -208,7 +208,23 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
             .assertDoesNotExist()
     }
 
-    @Test fun realMicrophoneTranscriptRenamesAndAnswersWithoutConversationalRouting() {
+    /**
+     * ASR listener forwarding is tested separately in
+     * VoiceAssistantControllerRobolectricTest. Invoke the controller's real
+     * transcript callback here to test Compose -> local identity dispatch.
+     */
+    private fun dispatchInAppTranscript(
+        controller: com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController,
+        spokenText: String
+    ) {
+        val onTranscriptField = controller.javaClass.getDeclaredField("onTranscript")
+            .apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        val callback = onTranscriptField.get(controller) as (String) -> Unit
+        rule.runOnIdle { callback(spokenText) }
+    }
+
+    @Test fun inAppMicrophoneCallbackRenamesAndAnswersWithoutConversationalRouting() {
         val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("ultra_wake_identity_v1", 0).edit().clear().commit()
         val dependencies = runtime()
@@ -218,30 +234,18 @@ class UltraF9BackgroundLaunchPermissionUiRobolectricTest {
                 LiveCard(dependencies, onVoiceController = { activeController = it })
             }
         }
-        rule.runOnIdle {
-            val listener = requireNotNull(activeController).recognitionListenerForTest()
-            listener.onResults(android.os.Bundle().apply {
-                putStringArrayList(
-                    android.speech.SpeechRecognizer.RESULTS_RECOGNITION,
-                    arrayListOf("Ultra, desde ahora te llamarás Juana")
-                )
-            })
-        }
+        dispatchInAppTranscript(
+            requireNotNull(activeController), "Ultra, desde ahora te llamarás Juana"
+        )
         rule.waitUntil(15000) { UltraWakeNameStore(context).load() == "juana" }
         rule.waitUntil(15000) {
             rule.onAllNodesWithText(
                 "Entendido. Ahora me puedes llamar juana.", substring = true
             ).fetchSemanticsNodes().isNotEmpty()
         }
-        rule.runOnIdle {
-            val listener = requireNotNull(activeController).recognitionListenerForTest()
-            listener.onResults(android.os.Bundle().apply {
-                putStringArrayList(
-                    android.speech.SpeechRecognizer.RESULTS_RECOGNITION,
-                    arrayListOf("Juana, cómo te llamas")
-                )
-            })
-        }
+        dispatchInAppTranscript(
+            requireNotNull(activeController), "Juana, cómo te llamas"
+        )
         rule.waitUntil(15000) {
             rule.onAllNodesWithText(
                 "Me llamo Juana, porque ese es el nombre que me pusiste.", substring = true
