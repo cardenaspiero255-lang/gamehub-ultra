@@ -1,5 +1,7 @@
 package com.cardenaspiero255.gamehubultra.performance.pressure
 
+import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
+
 /**
  * CAR-52: read-only pressure estimates from measured public Android telemetry.
  * A pressure estimate never claims to kill processes or free RAM.
@@ -29,6 +31,27 @@ data class ResourcePressureReport(
 }
 
 object ResourcePressureIntelligence {
+    /**
+     * Translate the real Android snapshot into this read-only domain model.
+     * The last history item mirrors the current snapshot in Home's timeline.
+     */
+    fun assessDiagnostics(
+        current: RuntimeDiagnostics?,
+        history: List<RuntimeDiagnostics>
+    ): ResourcePressureReport? {
+        if (current == null) return null
+        fun RuntimeDiagnostics.toSample() = ResourcePressureSample(
+            totalRamMb = memory.totalRamMb,
+            availableRamMb = memory.availableRamMb,
+            totalStorageBytes = storage.totalBytes,
+            freeStorageBytes = storage.freeBytes
+        )
+        return assess(
+            current = current.toSample(),
+            history = history.dropLast(1).takeLast(4).map { it.toSample() }
+        )
+    }
+
     fun assess(
         current: ResourcePressureSample,
         history: List<ResourcePressureSample> = emptyList()
@@ -86,13 +109,12 @@ object ResourcePressureIntelligence {
     ): PressureTrend {
         val validTotal = current.totalRamMb.takeIf { it > 0L }
             ?: return PressureTrend.INSUFFICIENT_HISTORY
-        val samples = (history.takeLast(4) + current)
-            .filter { it.totalRamMb == validTotal && headroomPercent(it.availableRamMb, validTotal) != null }
-        if (samples.size < 3) return PressureTrend.INSUFFICIENT_HISTORY
-        val previous = headroomPercent(samples.first().availableRamMb, validTotal)
-            ?: return PressureTrend.INSUFFICIENT_HISTORY
-        val latest = headroomPercent(samples.last().availableRamMb, validTotal)
-            ?: return PressureTrend.INSUFFICIENT_HISTORY
+        val percentages = (history.takeLast(4) + current)
+            .filter { it.totalRamMb == validTotal }
+            .mapNotNull { headroomPercent(it.availableRamMb, validTotal) }
+        if (percentages.size < 3) return PressureTrend.INSUFFICIENT_HISTORY
+        val previous = percentages.first()
+        val latest = percentages.last()
         return when {
             latest <= previous - 6 -> PressureTrend.INCREASING
             latest >= previous + 6 -> PressureTrend.RECOVERING
