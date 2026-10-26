@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.voice
 
 import android.content.Intent
+import android.speech.RecognizerIntent
 import android.os.Handler
 import kotlin.test.Test
 import org.junit.runner.RunWith
@@ -24,6 +25,41 @@ class UltraF9JuanaStopRecoveryTest {
     private fun setField(service: UltraWakeService, name: String, value: Any?) {
         UltraWakeService::class.java.getDeclaredField(name)
             .apply { isAccessible = true }.set(service, value)
+    }
+
+    @Test
+    fun quietStopRecognizerUsesShorterEndpointAndStopBias() {
+        val intent = UltraWakeRecognitionIntentFactory.create(
+            languageTag = "es-CL",
+            mode = UltraWakeRecognitionMode.LEGACY_RESTARTING,
+            persistentSource = null,
+            wakeName = "roberto",
+            interruptionOnly = true
+        )
+        val hints = intent.getStringArrayListExtra(RecognizerIntent.EXTRA_BIASING_STRINGS).orEmpty()
+        assertTrue("roberto para" in hints)
+        assertTrue("Ultra para" in hints)
+        assertEquals(8, intent.getIntExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 0))
+        assertEquals(
+            400L,
+            intent.getLongExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 0L)
+        )
+        val ordinary = UltraWakeRecognitionIntentFactory.create(
+            languageTag = "es-CL",
+            mode = UltraWakeRecognitionMode.LEGACY_RESTARTING,
+            persistentSource = null
+        )
+        assertEquals(850L,
+            ordinary.getLongExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 0L)
+        )
+    }
+
+    @Test
+    fun politeStopAliasesNeverMisinterpretAQuestion() {
+        assertTrue(UltraWakeStopSpeakingIntent.matches("Ultra, deja de hablar"))
+        assertTrue(UltraWakeStopSpeakingIntent.matches("Roberto, para por favor".replace("Roberto", "Ultra")))
+        assertFalse(UltraWakeStopSpeakingIntent.matches("Ultra, para qué sirve el procesador"))
+        assertFalse(UltraWakeStopSpeakingIntent.matches("Ultra, no pares"))
     }
 
     @Test

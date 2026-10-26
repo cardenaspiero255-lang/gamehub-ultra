@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.voice
 
 import android.os.Handler
+import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 
@@ -8,7 +9,8 @@ internal class UltraWakeSpeechPlaybackController(
     private val mainHandler: Handler,
     private val speechGeneration: UltraWakeSpeechGeneration,
     private val playbackGuard: UltraWakePlaybackGuard,
-    private val onPlaybackFinished: (Long) -> Unit
+    private val onPlaybackFinished: (Long) -> Unit,
+    private val bargeInSpeechVolume: Float = 1f
 ) {
     private var tts: TextToSpeech? = null
 
@@ -35,6 +37,14 @@ internal class UltraWakeSpeechPlaybackController(
         playbackGuard.onPlaybackStarted(response)
         val chunks = UltraSpeechChunker.chunk(response)
         val engine = tts
+        // Lower only this service's TTS utterances while stop-only ASR is
+        // running. Do not modify system media volume or another app's audio.
+        val speechParams = if (bargeInSpeechVolume < 1f) Bundle().apply {
+            putFloat(
+                TextToSpeech.Engine.KEY_PARAM_VOLUME,
+                bargeInSpeechVolume.coerceIn(0.5f, 1f)
+            )
+        } else null
         if (engine == null || chunks.isEmpty()) {
             complete(token)
             return
@@ -50,7 +60,7 @@ internal class UltraWakeSpeechPlaybackController(
             val result = engine.speak(
                 segment,
                 if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
-                null,
+                speechParams,
                 utteranceId
             )
             if (result == TextToSpeech.ERROR) {

@@ -93,7 +93,8 @@ class UltraWakeService : Service() {
             mainHandler = mainHandler,
             speechGeneration = speechGeneration,
             playbackGuard = playbackGuard,
-            onPlaybackFinished = { token -> finishCommandAndResume(token, playbackEnded = true) }
+            onPlaybackFinished = { token -> finishCommandAndResume(token, playbackEnded = true) },
+            bargeInSpeechVolume = 0.78f
         )
     }
     private val sessionPolicy = UltraWakeSessionPolicy(Build.VERSION.SDK_INT)
@@ -257,7 +258,8 @@ class UltraWakeService : Service() {
                 languageTag = recognitionLanguageTag,
                 mode = requestedMode,
                 persistentSource = persistentSpeechSource,
-                wakeName = currentWakeName()
+                wakeName = currentWakeName(),
+                interruptionOnly = interruptWindow
             )
             speech.startListening(intent)
             if (
@@ -549,6 +551,26 @@ class UltraWakeService : Service() {
         val privacyEpoch = UltraPrivacyEpoch.current()
         if (!lifecycleGate.canAcceptRecognition()) {
             commandCoordinator.finishCommand()
+            return
+        }
+
+        // Local identity is a control-plane command: it must work at the very
+        // first recognized turn, independently of AI initialization, network,
+        // or a backed-up command executor. The wake invocation is mandatory.
+        val localIdentityAnswer = if (UltraWakeNamePolicy.isInvoked(transcript, currentWakeName()) &&
+            UltraPrivacyEpoch.isCurrent(privacyEpoch)
+        ) {
+            UltraWakeLocalIdentityActions.handle(applicationContext, transcript)
+        } else null
+        if (localIdentityAnswer != null) {
+            if (UltraPrivacyEpoch.isCurrent(privacyEpoch) &&
+                lifecycleGate.canAcceptRecognition() && !stopped
+            ) {
+                speakAndResume(localIdentityAnswer)
+            } else {
+                commandCoordinator.finishCommand()
+                if (!stopped) scheduleRestart()
+            }
             return
         }
 
