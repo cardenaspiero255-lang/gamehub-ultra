@@ -7,7 +7,10 @@ import com.cardenaspiero255.gamehubultra.network.diagnostics.NetworkGamingDiagno
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityLatencyProbe
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityTelemetry
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Existing voice/UI network entry point, now backed by the CAR-51 diagnostics
@@ -17,25 +20,37 @@ object VoiceNetworkSnapshotFactory {
     private const val MAX_HISTORY = 6
     private val adapter = NetworkGamingDiagnosticsAdapter()
     private val engine = NetworkGamingDiagnosticsEngine()
-    private val session = VoiceNetworkSnapshotSession()
-
+    private val probeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val asyncSession = VoiceNetworkAsyncProbeCoordinator()
+    
     /**
-     * Production voice callers invoke this on an existing background worker.
-     * Do not reuse old latency samples after a disconnect or network change.
+     * Never block the caller on an HTTP probe. The first status may be
+     * UNMEASURED; a later request uses genuine completed measurements.
+     * This preserves the foreground voice/chat responsiveness on OEM devices.
      */
-    fun current(context: Context): VoiceNetworkSnapshot? =
-        session.capture(
-            readConnectivity = { RuntimeDiagnosticsProvider.connectivity(context) },
-            measureLatency = { handle ->
-                runBlocking {
+    fun current(context: Context): VoiceNetworkSnapshot? {
+        val appContext = context.applicationContext
+        return asyncSession.capture(
+            telemetry = RuntimeDiagnosticsProvider.connectivity(appContext),
+            timestampMs = System.currentTimeMillis()
+        ) { handle, completed ->
+            probeScope.launch {
+                val measuredLatency = try {
                     ConnectivityLatencyProbe.measure(
-                        context = context,
+                        context = appContext,
                         expectedNetworkHandle = handle
                     )
+                } catch (_: Exception) {
+                    null
                 }
-            },
-            timestampMs = { System.currentTimeMillis() }
-        )
+                completed(
+                    measuredLatency,
+                    RuntimeDiagnosticsProvider.connectivity(appContext),
+                    System.currentTimeMillis()
+                )
+            }
+        }
+    }
 
     /**
      * Legacy/test entry point. A numeric latency alone is NOT proof that a
