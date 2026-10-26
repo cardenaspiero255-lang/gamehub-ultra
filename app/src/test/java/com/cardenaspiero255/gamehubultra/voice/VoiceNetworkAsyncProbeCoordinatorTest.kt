@@ -97,4 +97,44 @@ class VoiceNetworkAsyncProbeCoordinatorTest {
         session.capture(wifi, 3_100L) { _, _ -> called++ }
         assertEquals(1, called)
     }
+
+    @Test fun previousProbeCannotOverwriteNewProbeAfterValidationRecoversOnSameHandle() {
+        val session = VoiceNetworkAsyncProbeCoordinator(minProbeIntervalMs = 1_000L)
+        val wifi = telemetry(51)
+        var obsolete: ((Long?, ConnectivityTelemetry, Long) -> Unit)? = null
+        var current: ((Long?, ConnectivityTelemetry, Long) -> Unit)? = null
+
+        session.capture(wifi, 1_000L) { _, done -> obsolete = done }
+        session.capture(wifi.copy(validated = false), 1_100L) { _, _ ->
+            error("Unvalidated connection must not start a probe")
+        }
+        session.capture(wifi, 1_200L) { _, done -> current = done }
+        assertNotNull(obsolete).invoke(13L, wifi, 1_250L)
+        assertNotNull(current).invoke(77L, wifi, 1_300L)
+
+        val result = assertNotNull(session.capture(wifi, 1_350L) { _, _ ->
+            error("New probe already finished within the minimum interval")
+        })
+        assertEquals(listOf(77L), assertNotNull(result.diagnostics).latencyHistoryMs,
+            "An old callback with the same network handle must not clear the new probe")
+    }
+
+    @Test fun returningToWifiHandleCannotAcceptCallbackFromPriorWifiGeneration() {
+        val session = VoiceNetworkAsyncProbeCoordinator(minProbeIntervalMs = 1_000L)
+        val wifi = telemetry(52)
+        val mobile = telemetry(53, "Móvil")
+        var oldWifiCallback: ((Long?, ConnectivityTelemetry, Long) -> Unit)? = null
+        var newWifiCallback: ((Long?, ConnectivityTelemetry, Long) -> Unit)? = null
+
+        session.capture(wifi, 1_000L) { _, done -> oldWifiCallback = done }
+        session.capture(mobile, 1_100L) { _, _ -> }
+        session.capture(wifi, 1_200L) { _, done -> newWifiCallback = done }
+        assertNotNull(oldWifiCallback).invoke(9L, wifi, 1_250L)
+        assertNotNull(newWifiCallback).invoke(91L, wifi, 1_300L)
+
+        val result = assertNotNull(session.capture(wifi, 1_350L) { _, _ -> })
+        assertEquals(listOf(91L), assertNotNull(result.diagnostics).latencyHistoryMs,
+            "Wi-Fi -> mobile -> Wi-Fi must invalidate callbacks from the first Wi-Fi session")
+    }
+
 }
