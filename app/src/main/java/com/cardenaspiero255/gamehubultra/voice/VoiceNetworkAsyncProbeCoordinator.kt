@@ -21,7 +21,8 @@ internal class VoiceNetworkAsyncProbeCoordinator(
     private val lock = Any()
     private var activeNetworkHandle: Long? = null
     private var activeTransport: String? = null
-    private var inFlightNetworkHandle: Long? = null
+    private class ProbeRequest(val handle: Long)
+    private var inFlightProbe: ProbeRequest? = null
     private var lastProbeStartedAtMs = Long.MIN_VALUE
     private var history: List<NetworkGamingDiagnosticSample> = emptyList()
 
@@ -31,14 +32,14 @@ internal class VoiceNetworkAsyncProbeCoordinator(
         scheduleProbe: (Long, (Long?, ConnectivityTelemetry, Long) -> Unit) -> Unit
     ): VoiceNetworkSnapshot? {
         require(timestampMs >= 0L)
-        var scheduledHandle: Long? = null
+        var scheduledProbe: ProbeRequest? = null
         val samples = synchronized(lock) {
             val currentHandle = telemetry.networkHandle
             val connected = telemetry.connected && telemetry.validated && currentHandle != null
             if (!connected) {
                 activeNetworkHandle = null
                 activeTransport = null
-                inFlightNetworkHandle = null
+                inFlightProbe = null
                 lastProbeStartedAtMs = Long.MIN_VALUE
                 history = emptyList()
             } else if (
@@ -49,7 +50,7 @@ internal class VoiceNetworkAsyncProbeCoordinator(
                 // the analyzer isolates measured latency by the latest handle.
                 activeNetworkHandle = currentHandle
                 activeTransport = telemetry.transport
-                inFlightNetworkHandle = null
+                inFlightProbe = null
                 lastProbeStartedAtMs = Long.MIN_VALUE
             }
 
@@ -64,23 +65,24 @@ internal class VoiceNetworkAsyncProbeCoordinator(
                 Long.MAX_VALUE
             } else timestampMs - lastProbeStartedAtMs
             if (connected && currentHandle != null &&
-                inFlightNetworkHandle != currentHandle &&
+                inFlightProbe?.handle != currentHandle &&
                 elapsed >= minProbeIntervalMs
             ) {
-                inFlightNetworkHandle = currentHandle
+                val request = ProbeRequest(currentHandle)
+                inFlightProbe = request
                 lastProbeStartedAtMs = timestampMs
-                scheduledHandle = currentHandle
+                scheduledProbe = request
             }
             history.toList()
         }
-        scheduledHandle?.let { handle ->
+        scheduledProbe?.let { request ->
             try {
-                scheduleProbe(handle) { measured, rechecked, completedAt ->
-                    finishProbe(handle, measured, rechecked, completedAt)
+                scheduleProbe(request.handle) { measured, rechecked, completedAt ->
+                    finishProbe(request, measured, rechecked, completedAt)
                 }
             } catch (_: Exception) {
                 synchronized(lock) {
-                    if (inFlightNetworkHandle == handle) inFlightNetworkHandle = null
+                    if (inFlightProbe === request) inFlightProbe = null
                 }
             }
         }
@@ -88,14 +90,16 @@ internal class VoiceNetworkAsyncProbeCoordinator(
     }
 
     private fun finishProbe(
-        handle: Long,
+        request: ProbeRequest,
         latency: Long?,
         rechecked: ConnectivityTelemetry,
         timestampMs: Long
     ) {
         synchronized(lock) {
-            if (inFlightNetworkHandle != handle) return@synchronized
-            inFlightNetworkHandle = null
+            // Network handles can be reused after a reset. Accept only this exact request.
+            if (inFlightProbe !== request) return@synchronized
+            inFlightProbe = null
+            val handle = request.handle
             if (
                 activeNetworkHandle != handle ||
                 rechecked.networkHandle != handle ||
