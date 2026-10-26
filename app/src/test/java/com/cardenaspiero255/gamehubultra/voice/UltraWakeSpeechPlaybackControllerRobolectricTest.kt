@@ -27,6 +27,22 @@ class UltraWakeSpeechPlaybackControllerRobolectricTest {
             .arguments[0] as UtteranceProgressListener
 
     @Test
+    fun wakeServiceBargeInLowersOnlyTtsUtteranceVolumeWithoutChangingSystemAudio() {
+        val generation = UltraWakeSpeechGeneration()
+        val tts = Mockito.mock(TextToSpeech::class.java)
+        val controller = UltraWakeSpeechPlaybackController(
+            Handler(Looper.getMainLooper()), generation,
+            UltraWakePlaybackGuard(), onPlaybackFinished = {},
+            bargeInSpeechVolume = 0.78f
+        )
+        controller.attach(tts)
+        controller.speak("Respuesta larga que el usuario puede interrumpir.")
+        val volume = spoken(tts).single().arguments[2] as android.os.Bundle
+        assertEquals(0.78f, volume.getFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME))
+        controller.shutdown()
+    }
+
+    @Test
     fun longGamingComparisonQueuesAllSegmentsAndFinishesOnlyAfterLastOne() {
         val generation = UltraWakeSpeechGeneration()
         val guard = UltraWakePlaybackGuard()

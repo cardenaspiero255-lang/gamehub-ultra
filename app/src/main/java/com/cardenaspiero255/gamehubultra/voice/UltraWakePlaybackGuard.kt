@@ -140,7 +140,13 @@ internal object UltraWakeStopSpeakingIntent {
             "silencio",
             "stop",
             "stop talking",
-            "be quiet"
+            "be quiet",
+            "deja de hablar",
+            "deja de hablar por favor",
+            "para por favor",
+            "detente por favor",
+            "puedes parar",
+            "guarda silencio"
         )
     }
 }

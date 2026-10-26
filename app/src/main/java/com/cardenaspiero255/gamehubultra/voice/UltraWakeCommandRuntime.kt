@@ -1,7 +1,6 @@
 package com.cardenaspiero255.gamehubultra.voice
 
 import android.content.Context
-import android.content.Intent
 import com.cardenaspiero255.gamehubultra.GameLibrary
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
@@ -37,21 +36,9 @@ internal class UltraWakeCommandRuntime(
     private val conversationLedger: UltraVoiceConversationLedger
 ) {
     fun execute(transcript: String): String {
-        val nameStore = UltraWakeNameStore(context)
-        // Rename and identity questions are local settings operations. Resolve
-        // them before initializing the AI advisor, game catalog or network.
-        UltraWakeNamePolicy.requestedName(transcript)?.let { requested ->
-            return if (nameStore.save(requested)) {
-                "Entendido. Ahora me puedes llamar $requested."
-            } else {
-                "No pude guardar ese nombre. Sigo respondiendo con mi nombre anterior."
-            }
-        }
-        UltraWakeIdentityAnswerPolicy.respond(
-            transcript = transcript,
-            currentName = nameStore.load(),
-            previousName = nameStore.previousName()
-        )?.let { answer -> return answer }
+        // The one-shot microphone, chat and continuous service must use the
+        // same settings handler before any AI/game/network routing.
+        UltraWakeLocalIdentityActions.handle(context, transcript)?.let { return it }
         val privacyEpoch = UltraPrivacyEpoch.current()
         val selectionRepository: GameSelectionStateRepository =
             GameHubProductionComposition.selectionRepository(context.applicationContext)
@@ -184,12 +171,21 @@ internal class UltraWakeCommandRuntime(
                 }
                 answer
             }
-            is UltraAgentRoute.Command -> formatCommandResult(
-                VoiceCommandEngine.execute(
+            is UltraAgentRoute.Command -> {
+                // A foreground microphone service does not grant the right to
+                // start an Activity on top of another app (Android BAL policy).
+                // Capture the actual dispatch path and report it accurately.
+                var launchOutcome: UltraBackgroundGameLaunchOutcome? = null
+                val actionResult = VoiceCommandEngine.execute(
                     command = route.command,
                     gamesProvider = { GameLibrary.discoverForVoice(context) },
                     aliasGamesProvider = { GameLibrary.discover(context).games },
-                    launchGame = { packageName -> launchGame(packageName) },
+                    launchGame = { packageName ->
+                        val outcome = UltraBackgroundGameLaunchDispatcher.from(context)
+                            .launch(packageName)
+                        launchOutcome = outcome
+                        outcome == UltraBackgroundGameLaunchOutcome.REQUESTED
+                    },
                     saveSelectedGame = { packageName ->
                         DurableSelectionMutationQueue.enqueue(
                             onFailure = ::reportSelectionPersistenceFailure
@@ -232,7 +228,12 @@ internal class UltraWakeCommandRuntime(
                         com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer.apply(context, profile)
                     }
                 )
-            )
+                UltraBackgroundGameLaunchFeedback.response(
+                    outcome = launchOutcome,
+                    openedGameLabel = (actionResult as? VoiceActionResult.GameOpened)?.game?.label,
+                    ordinaryResult = { formatCommandResult(actionResult) }
+                )
+            }
         }
     }
 
@@ -265,15 +266,6 @@ internal class UltraWakeCommandRuntime(
         6 -> "emergencia"
         7 -> "apagado"
         else -> "no disponible"
-    }
-
-    private fun launchGame(packageName: String): Boolean {
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName) ?: return false
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        return runCatching {
-            context.startActivity(launchIntent)
-            true
-        }.getOrDefault(false)
     }
 
     private fun reportSelectionPersistenceFailure(error: Throwable) {

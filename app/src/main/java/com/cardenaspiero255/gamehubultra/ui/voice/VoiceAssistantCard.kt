@@ -1,7 +1,11 @@
 package com.cardenaspiero255.gamehubultra.ui.voice
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -72,9 +76,24 @@ internal fun VoiceAssistantCard(
     startListeningRequest: Int = 0,
     // Internal-only seams for hermetic Compose privacy regressions.
     visualPickerOverride: (((android.net.Uri?) -> Unit) -> Unit)? = null,
-    visualOcrOverride: (suspend (android.content.Context, android.net.Uri, UltraVisualReadControl, android.os.CancellationSignal) -> String)? = null
+    visualOcrOverride: (suspend (android.content.Context, android.net.Uri, UltraVisualReadControl, android.os.CancellationSignal) -> String)? = null,
+    // Optional observation seam: tests drive the real microphone recognition listener.
+    voiceControllerObserver: ((VoiceAssistantController) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    var backgroundLaunchAllowed by remember(context) {
+        mutableStateOf(
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                Settings.canDrawOverlays(context)
+        )
+    }
+    val overlayPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        backgroundLaunchAllowed =
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                Settings.canDrawOverlays(context)
+    }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val aliasRepository = ultraRuntime.aliasRepository
     val aiAdvisor = ultraRuntime.assistant
@@ -183,6 +202,28 @@ internal fun VoiceAssistantCard(
             maxEntries = MAX_CHAT_HISTORY
         )
 
+        // Identity commands are local, deterministic settings operations.
+        // Resolve them at the user action boundary, before asynchronous AI
+        // dispatch; no provider, game launcher or network dependency is needed.
+        val localIdentityAnswer = UltraWakeLocalIdentityActions.handle(context, message)
+        if (localIdentityAnswer != null) {
+            if (!UltraPrivacyEpoch.isCurrent(
+                    draftOriginAtSend?.privacyEpoch ?: UltraPrivacyEpoch.current()
+                ) || latestAiContext.selectedGamePackage != originatingGamePackage
+            ) return
+            chatMessage = ""
+            visualDraftOrigin = null
+            latestOnConversationChanged(
+                UltraConversationPolicy.append(
+                    history = withUser,
+                    entry = "Ultra: " + localIdentityAnswer,
+                    maxEntries = MAX_CHAT_HISTORY
+                )
+            )
+            response = localIdentityAnswer
+            return
+        }
+
         val failureAnswer = "No pude completar la consulta. Inténtalo de nuevo."
         val submission = queryRunner.launch(
             // Runner rechecks this immutable consent epoch during admission and
@@ -210,7 +251,7 @@ internal fun VoiceAssistantCard(
             queryRunner.requireCurrentDispatch(originatingGamePackage)
             val route = agentRouter.route(
                 UltraAgentRoutingRequest(
-                    transcript = message.trim(),
+                    transcript = UltraWakeLocalIdentityActions.canonicalize(context, message),
                     conversationHistory = previousConversation,
                     optionalResolver = aiIntentResolver,
                     telemetry = UltraRuntimeTelemetry(
@@ -392,6 +433,40 @@ internal fun VoiceAssistantCard(
                 val originatingGamePackage = capturedVoiceScope.gamePackage
                 val turnPrivacyEpoch = UltraPrivacyEpoch.current()
                 transcript = spokenText
+                if (
+                    !UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch) ||
+                    !isUltraVoiceTurnScopeCurrent(
+                        captured = capturedVoiceScope,
+                        assistantInputReady = latestAssistantInputEnabled,
+                        currentGamePackage = latestAiContext.selectedGamePackage
+                    )
+                ) return@transcript
+                // No background coroutine or LLM is required to rename Ultra or
+                // answer its current name. Use the same local handler as chat.
+                val localIdentityAnswer = UltraWakeLocalIdentityActions.handle(context, spokenText)
+                if (localIdentityAnswer != null) {
+                    val withUser = UltraConversationPolicy.append(
+                        history = latestConversation,
+                        entry = "Tú: " + spokenText,
+                        maxEntries = MAX_CHAT_HISTORY
+                    )
+                    val withAnswer = UltraConversationPolicy.append(
+                        history = withUser,
+                        entry = "Ultra: " + localIdentityAnswer,
+                        maxEntries = MAX_CHAT_HISTORY
+                    )
+                    if (UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch)) {
+                        UltraVoiceResultPublisher.publishIfCurrentGame(
+                            originatingGamePackage = originatingGamePackage,
+                            currentGamePackage = latestAiContext.selectedGamePackage
+                        ) {
+                            latestOnConversationChanged(withAnswer)
+                            response = localIdentityAnswer
+                            controller.speak(localIdentityAnswer)
+                        }
+                    }
+                    return@transcript
+                }
                 activeVoiceTurn = scope.launch(Dispatchers.IO) {
                     if (
                         !UltraPrivacyEpoch.isCurrent(turnPrivacyEpoch) ||
@@ -426,7 +501,7 @@ internal fun VoiceAssistantCard(
                     val voiceStatus = VoiceDeviceStatusProvider.read(context)
                     val route = agentRouter.route(
                         UltraAgentRoutingRequest(
-                            transcript = spokenText,
+                            transcript = UltraWakeLocalIdentityActions.canonicalize(context, spokenText),
                             optionalResolver = aiIntentResolver,
                             telemetry = UltraRuntimeTelemetry(
                                 batteryPercent = voiceStatus.batteryPercent,
@@ -573,6 +648,7 @@ applyNetworkProfile = networkGaming::applyProfile
         )
         controller
     }
+    SideEffect { voiceControllerObserver?.invoke(voiceController) }
 
     fun requestOneShotListening() {
         if (!latestAssistantInputEnabled || listening) return
@@ -811,6 +887,7 @@ applyNetworkProfile = networkGaming::applyProfile
             },
             confirmButton = {
                 Button(
+                    modifier = Modifier.testTag("ultra-chat-send"),
                     onClick = ::sendTypedChatMessage,
                     enabled = assistantInputEnabled && chatMessage.isNotBlank() && !chatSending &&
                         UltraVisualDraftPolicy.canSend(
@@ -901,7 +978,7 @@ applyNetworkProfile = networkGaming::applyProfile
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Escucha continua", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Responde solo cuando digas “Ultra”.",
+                        "Responde cuando digas Ultra o el nombre personalizado que elegiste.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -932,6 +1009,44 @@ applyNetworkProfile = networkGaming::applyProfile
                         }
                     }
                 )
+            }
+            if (continuousListeningEnabled) {
+                Text(
+                    "Fuera de GameHub, Android puede impedir abrir juegos " +
+                        "automáticamente. En ese caso Ultra envía una " +
+                        "notificación que debes tocar. En Android 14 la apertura " +
+                        "automática opcional usa el permiso especial " +
+                        "«Mostrar sobre otras aplicaciones», que también " +
+                        "permite superposiciones. Solo se solicita si lo eliges.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    if (backgroundLaunchAllowed) {
+                        Text(
+                            "Permiso opcional de apertura desde segundo plano concedido. " +
+                                "Android todavía puede restringir algunas aperturas.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        TextButton(
+                            onClick = {
+                                runCatching {
+                                    overlayPermissionLauncher.launch(
+                                        Intent(
+                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            Uri.parse("package:${context.packageName}")
+                                        )
+                                    )
+                                }.onFailure {
+                                    response = "No pude abrir los ajustes de permisos. " +
+                                        "Puedes seguir usando la notificación para abrir juegos."
+                                }
+                            }
+                        ) {
+                            Text("Conceder «Mostrar sobre otras aplicaciones» (opcional)")
+                        }
+                    }
+                }
             }
             TextButton(
                 onClick = {

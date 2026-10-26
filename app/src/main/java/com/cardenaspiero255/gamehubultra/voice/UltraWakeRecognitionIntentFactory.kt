@@ -9,7 +9,8 @@ internal object UltraWakeRecognitionIntentFactory {
         languageTag: String,
         mode: UltraWakeRecognitionMode,
         persistentSource: UltraPersistentSpeechSource?,
-        wakeName: String = UltraWakeNamePolicy.DEFAULT_NAME
+        wakeName: String = UltraWakeNamePolicy.DEFAULT_NAME,
+        interruptionOnly: Boolean = false
     ): Intent =
         Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
@@ -17,7 +18,7 @@ internal object UltraWakeRecognitionIntentFactory {
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
             )
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, if (interruptionOnly) 8 else 5)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 putExtra(RecognizerIntent.EXTRA_REQUEST_WORD_CONFIDENCE, true)
@@ -27,18 +28,31 @@ internal object UltraWakeRecognitionIntentFactory {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 putStringArrayListExtra(
                     RecognizerIntent.EXTRA_BIASING_STRINGS,
-                    arrayListOf("Ultra", wakeName)
+                    ArrayList(
+                        (listOf(
+                            "Ultra", wakeName,
+                            "Ultra para", "$wakeName para",
+                            "Ultra detente", "$wakeName detente",
+                            "Ultra cállate", "$wakeName cállate",
+                            "Ultra deja de hablar", "$wakeName deja de hablar",
+                            "Ultra desde ahora te llamarás",
+                            "$wakeName desde ahora te llamarás",
+                            "Ultra cambia tu nombre a",
+                            "$wakeName cambia tu nombre a",
+                            "Ultra quiero que te llames"
+                        )).distinct()
+                    )
                 )
             }
 
             if (mode == UltraWakeRecognitionMode.LEGACY_RESTARTING) {
                 putExtra(
                     RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    1200L
+                    if (interruptionOnly) 650L else 1200L
                 )
                 putExtra(
                     RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    850L
+                    if (interruptionOnly) 400L else 850L
                 )
             }
 

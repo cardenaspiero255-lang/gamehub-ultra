@@ -11,6 +11,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.junit.runner.RunWith
 import org.mockito.Mockito
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
@@ -69,6 +70,32 @@ class UltraF9WakeNamePersistenceRobolectricTest {
         assertFalse(check.invoke(service, "esto no es una orden") as Boolean)
     }
 
+    @Test fun wakeServiceRenamesImmediatelyWithoutWaitingForTheAiCommandQueue() {
+        val context = RuntimeEnvironment.getApplication()
+        val store = UltraWakeNameStore(context)
+        val controller = Robolectric.buildService(UltraWakeService::class.java)
+        val service = controller.get()
+        val executor = Mockito.mock(java.util.concurrent.ExecutorService::class.java)
+        UltraWakeService::class.java.getDeclaredField("commandExecutor")
+            .apply { isAccessible = true }
+            .set(service, executor)
+        val coordinator = UltraWakeService::class.java.getDeclaredField("commandCoordinator")
+            .apply { isAccessible = true }
+            .get(service) as UltraWakeCommandCoordinator
+        val handle = UltraWakeService::class.java.getDeclaredMethod(
+            "handleCommand", String::class.java
+        ).apply { isAccessible = true }
+        try {
+            store.save("ultra")
+            assertTrue(coordinator.tryBeginCommand())
+            handle.invoke(service, "Ultra, desde ahora te llamarás Roberto")
+            assertEquals("roberto", store.load())
+            Mockito.verifyNoInteractions(executor)
+        } finally {
+            store.save("ultra")
+        }
+    }
+
     @Test fun asrBiasContainsCustomNameAndOriginalUltra() {
         val intent = UltraWakeRecognitionIntentFactory.create(
             languageTag = "es-CL",
@@ -79,5 +106,8 @@ class UltraF9WakeNamePersistenceRobolectricTest {
         val hints = intent.getStringArrayListExtra(RecognizerIntent.EXTRA_BIASING_STRINGS).orEmpty()
         assertTrue("Ultra" in hints)
         assertTrue("roberto" in hints)
+        assertTrue("Ultra desde ahora te llamarás" in hints)
+        assertTrue("roberto desde ahora te llamarás" in hints)
+        assertTrue("roberto deja de hablar" in hints)
     }
 }

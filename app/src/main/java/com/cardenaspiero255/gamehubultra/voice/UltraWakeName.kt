@@ -104,3 +104,31 @@ internal class UltraWakeNameStore(context: Context) {
             .commit()
     }
 }
+
+/**
+ * Local identity operations used by both the foreground wake service and the
+ * in-app voice/text chat. Never delegate settings mutations to conversational AI.
+ */
+internal object UltraWakeLocalIdentityActions {
+    fun canonicalize(context: Context, transcript: String): String {
+        val store = UltraWakeNameStore(context)
+        return UltraWakeNamePolicy.canonicalizeInvocation(transcript, store.load())
+    }
+
+    fun handle(context: Context, transcript: String): String? {
+        val store = UltraWakeNameStore(context)
+        val canonical = UltraWakeNamePolicy.canonicalizeInvocation(transcript, store.load())
+        UltraWakeNamePolicy.requestedName(canonical)?.let { requested ->
+            return if (store.save(requested)) {
+                "Entendido. Ahora me puedes llamar $requested."
+            } else {
+                "No pude guardar ese nombre. Sigo respondiendo con mi nombre anterior."
+            }
+        }
+        return UltraWakeIdentityAnswerPolicy.respond(
+            transcript = canonical,
+            currentName = store.load(),
+            previousName = store.previousName()
+        )
+    }
+}
