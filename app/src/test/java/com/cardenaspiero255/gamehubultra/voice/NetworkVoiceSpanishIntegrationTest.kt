@@ -171,12 +171,14 @@ class NetworkVoiceSpanishIntegrationTest {
                     downstreamBandwidthKbps = 500_000,
                     latencyMs = 41L
                 )
-            )
+            ),
+            latencyMeasured = true
         )
 
         requireNotNull(snapshot)
         assertEquals(38.0, snapshot.metrics.averageLatencyMs)
-        assertEquals(NetworkGameProfile.COMPETITIVE, snapshot.recommendedProfile)
+        assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
+        assertFalse(kotlin.test.assertNotNull(snapshot.diagnostics).packetLossMeasured)
     }
 
     @Test

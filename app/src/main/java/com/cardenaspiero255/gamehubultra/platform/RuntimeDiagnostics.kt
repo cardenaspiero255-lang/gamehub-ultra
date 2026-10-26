@@ -120,6 +120,11 @@ object RuntimeDiagnosticsProvider : UltraToolContract<Context, RuntimeDiagnostic
         )
     }
 
+    /** Lightweight connectivity snapshot for verified network probes. */
+    fun connectivity(context: Context): ConnectivityTelemetry =
+        runCatching { readConnectivity(context.applicationContext) }
+            .getOrDefault(ConnectivityTelemetry(null, false, false, true, null, null, null))
+
     private fun readThermal(context: Context): ThermalTelemetry {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             return ThermalTelemetry(null, null)
