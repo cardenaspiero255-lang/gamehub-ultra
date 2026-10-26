@@ -32,6 +32,7 @@ import com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
+import com.cardenaspiero255.gamehubultra.platform.gpu.AndroidGpuCapabilityProbe
 import com.cardenaspiero255.gamehubultra.performance.pressure.ResourcePressureIntelligence
 import com.cardenaspiero255.gamehubultra.ui.components.*
 import com.cardenaspiero255.gamehubultra.ui.home.state.HomeUiEvent
@@ -105,6 +106,9 @@ internal fun HomeScreen(
     showAssistantCards: Boolean
 ) {
     val timelineContext = LocalContext.current
+    val gpuCapabilities = remember(timelineContext, device.gpuVendor, device.gpuRenderer) {
+        AndroidGpuCapabilityProbe.read(timelineContext, device.gpuVendor, device.gpuRenderer)
+    }
     val homeStateHolder = rememberHomeUiStateHolder()
     val pressureReport = remember(runtimeDiagnostics, telemetryTrend) {
         ResourcePressureIntelligence.assessDiagnostics(runtimeDiagnostics, telemetryTrend)
@@ -301,6 +305,7 @@ internal fun HomeScreen(
         }
         item { DeviceStatusCard(device, state.capabilities) }
         item { ResourcePressureCard(report = pressureReport) }
+        item { GpuCapabilityCard(report = gpuCapabilities) }
         item {
             RuntimeDiagnosticsCard(
                 device = device,
