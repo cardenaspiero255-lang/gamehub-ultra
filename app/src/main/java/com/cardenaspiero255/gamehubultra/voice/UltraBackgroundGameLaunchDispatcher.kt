@@ -78,9 +78,13 @@ internal object UltraBackgroundGameLaunchPolicy {
     fun decide(
         appVisible: Boolean,
         overlayAllowed: Boolean,
-        notificationsAllowed: Boolean
+        notificationsAllowed: Boolean,
+        sdkInt: Int = Build.VERSION.SDK_INT
     ): UltraBackgroundLaunchPath = when {
-        appVisible || overlayAllowed -> UltraBackgroundLaunchPath.REQUEST_DIRECT
+        // Background activity launch restrictions start with Android 10 (API 29).
+        // Preserve the existing hands-free path on supported Android 8/9.
+        appVisible || overlayAllowed || sdkInt < Build.VERSION_CODES.Q ->
+            UltraBackgroundLaunchPath.REQUEST_DIRECT
         notificationsAllowed -> UltraBackgroundLaunchPath.USER_TAP_NOTIFICATION
         else -> UltraBackgroundLaunchPath.NOTIFICATION_PERMISSION_REQUIRED
     }
@@ -156,7 +160,8 @@ internal class UltraBackgroundGameLaunchDispatcher(
                     val permissionGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
                         ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) ==
                             PackageManager.PERMISSION_GRANTED
-                    enabled && permissionGranted
+                    enabled && permissionGranted &&
+                        UltraBackgroundGameLaunchNotification.isChannelEnabled(appContext)
                 },
                 startActivity = appContext::startActivity,
                 postNotification = { packageName, intent ->
@@ -193,6 +198,18 @@ internal object UltraBackgroundGameLaunchNotification {
     private const val CHANNEL_ID = "ultra_voice_launch_actions"
     private const val NOTIFICATION_ID_BASE = 24100
 
+    /**
+     * User-controlled channel importance is independent of app-wide
+     * POST_NOTIFICATIONS permission. A missing channel is created on demand.
+     */
+    fun isChannelEnabled(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true
+        val manager = context.getSystemService(NotificationManager::class.java)
+            ?: return false
+        return manager.getNotificationChannel(CHANNEL_ID)?.importance !=
+            NotificationManager.IMPORTANCE_NONE
+    }
+
     fun show(context: Context, packageName: String, intent: Intent): Boolean {
         val manager = context.getSystemService(NotificationManager::class.java)
             ?: return false
@@ -207,6 +224,10 @@ internal object UltraBackgroundGameLaunchNotification {
                 }
             )
         }
+        // Creating an already user-blocked channel does not restore its
+        // importance. Do not claim TAP_REQUIRED if Android will drop the alert.
+        if (!isChannelEnabled(context)) return false
+
         val pending = PendingIntent.getActivity(
             context,
             packageName.hashCode(),
