@@ -109,7 +109,7 @@ class StoreConnectionActivity : ComponentActivity() {
                         "&responseType=code"
                 )
                 webView.loadUrl(
-                    EpicConstants.EPIC_WEB_ORIGIN + "/id/login" +
+                    EpicConstants.AUTH_BASE_URL + "/id/login" +
                         "?redirectUrl=" + redirect +
                         "&state=" + Uri.encode(state)
                 )
@@ -411,7 +411,7 @@ private object SteamStoreClient {
 private object EpicConstants {
     const val CLIENT_ID = "34a02cf8f4414e29b15921876da36f9a"
 
-    const val EPIC_WEB_ORIGIN = "https://www.epicgames.com"
+    const val AUTH_BASE_URL = "https://www.epicgames.com"
 
     const val LIBRARY_HOST = "library-service.live.use1a.on.epicgames.com"
     const val REDIRECT_URI = "https://www.epicgames.com/id/api/redirect"
