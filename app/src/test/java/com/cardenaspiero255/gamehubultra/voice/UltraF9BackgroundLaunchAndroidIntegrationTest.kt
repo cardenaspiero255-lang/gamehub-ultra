@@ -31,6 +31,42 @@ class UltraF9BackgroundLaunchAndroidIntegrationTest {
     private val packageName = "com.example.brawlstars"
 
     @Test
+    fun blockedLaunchChannelCannotClaimATappableNotificationWasPosted() {
+        val app = RuntimeEnvironment.getApplication()
+        val manager = app.getSystemService(NotificationManager::class.java)
+        val channelId = "ultra_voice_launch_actions"
+        manager.cancelAll()
+        manager.createNotificationChannel(
+            android.app.NotificationChannel(
+                channelId, "Canal bloqueado por el usuario", NotificationManager.IMPORTANCE_NONE
+            )
+        )
+        Shadows.shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        try {
+            val intent = Intent(app, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            assertFalse(
+                UltraBackgroundGameLaunchNotification.show(app, packageName, intent),
+                "An individual blocked notification channel must never claim successful delivery"
+            )
+            val installedPackage = app.packageName
+            assertNotNull(app.packageManager.getLaunchIntentForPackage(installedPackage))
+            assertEquals(
+                UltraBackgroundGameLaunchOutcome.NOTIFICATION_PERMISSION_REQUIRED,
+                UltraBackgroundGameLaunchDispatcher.from(app).launch(installedPackage),
+                "Voice response must report blocked launch notifications as disabled"
+            )
+            assertEquals(
+                null, Shadows.shadowOf(manager).getNotification(
+                    24100 + (installedPackage.hashCode() and 0x0FFF)
+                )
+            )
+        } finally {
+            manager.deleteNotificationChannel(channelId)
+        }
+    }
+
+    @Test
     fun notificationContainsAnExplicitUserTapPendingIntentAndChannel() {
         val app = RuntimeEnvironment.getApplication()
         val manager = app.getSystemService(NotificationManager::class.java)

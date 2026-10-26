@@ -14,6 +14,38 @@ import kotlin.test.assertTrue
 @Config(sdk = [34])
 class UltraF9BackgroundGameLaunchTest {
     @Test
+    @Config(sdk = [26])
+    fun androidOreoBackgroundLaunchDoesNotRequireAnOverlayOrNotification() {
+        assertEquals(
+            UltraBackgroundLaunchPath.REQUEST_DIRECT,
+            UltraBackgroundGameLaunchPolicy.decide(
+                appVisible = false, overlayAllowed = false, notificationsAllowed = false
+            )
+        )
+    }
+
+    @Test
+    @Config(sdk = [28])
+    fun androidPieBackgroundLaunchDoesNotRequireAnOverlayOrNotification() {
+        var opened = 0
+        var posted = 0
+        val dispatcher = UltraBackgroundGameLaunchDispatcher(
+            launchIntentForPackage = { Intent(Intent.ACTION_MAIN).setPackage(it) },
+            visible = { false },
+            overlayAllowed = { false },
+            notificationsAllowed = { false },
+            startActivity = { opened++ },
+            postNotification = { _, _ -> posted++; false }
+        )
+        assertEquals(
+            UltraBackgroundGameLaunchOutcome.REQUESTED,
+            dispatcher.launch("com.example.brawlstars")
+        )
+        assertEquals(1, opened)
+        assertEquals(0, posted)
+    }
+
+    @Test
     fun backgroundWithoutPrivilegeMustNotPretendThatAnActivityOpened() {
         assertEquals(
             UltraBackgroundLaunchPath.USER_TAP_NOTIFICATION,
