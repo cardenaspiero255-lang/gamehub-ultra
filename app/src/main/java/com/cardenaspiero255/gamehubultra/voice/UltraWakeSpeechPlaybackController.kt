@@ -9,8 +9,8 @@ internal class UltraWakeSpeechPlaybackController(
     private val mainHandler: Handler,
     private val speechGeneration: UltraWakeSpeechGeneration,
     private val playbackGuard: UltraWakePlaybackGuard,
-    private val onPlaybackFinished: (Long) -> Unit,
-    private val bargeInSpeechVolume: Float = 1f
+    private val bargeInSpeechVolume: Float = 1f,
+    private val onPlaybackFinished: (Long) -> Unit
 ) {
     private var tts: TextToSpeech? = null
 
