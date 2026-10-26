@@ -32,6 +32,7 @@ import com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
+import com.cardenaspiero255.gamehubultra.platform.gpu.AndroidGpuCapabilityProbe
 import com.cardenaspiero255.gamehubultra.ui.components.*
 import com.cardenaspiero255.gamehubultra.ui.home.state.HomeUiEvent
 import com.cardenaspiero255.gamehubultra.ui.home.state.rememberHomeUiStateHolder
@@ -104,6 +105,9 @@ internal fun HomeScreen(
     showAssistantCards: Boolean
 ) {
     val timelineContext = LocalContext.current
+    val gpuCapabilities = remember(timelineContext, device.gpuVendor, device.gpuRenderer) {
+        AndroidGpuCapabilityProbe.read(timelineContext, device.gpuVendor, device.gpuRenderer)
+    }
     val homeStateHolder = rememberHomeUiStateHolder()
     val homeUiState = homeStateHolder.state
     LaunchedEffect(assistantRevealRequest) {
@@ -296,6 +300,7 @@ internal fun HomeScreen(
             }
         }
         item { DeviceStatusCard(device, state.capabilities) }
+        item { GpuCapabilityCard(report = gpuCapabilities) }
         item {
             RuntimeDiagnosticsCard(
                 device = device,
