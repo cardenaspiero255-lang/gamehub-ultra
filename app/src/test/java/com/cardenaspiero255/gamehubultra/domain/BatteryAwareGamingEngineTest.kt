@@ -216,4 +216,36 @@ class BatteryAwareGamingEngineTest {
         assertTrue(assessment.preventAggressiveProfiles)
     }
 
+    @Test
+    fun `invalid battery percentages never become a current level or a false drain`() {
+        val samples = listOf(
+            snapshot(minutes = 0, percent = 80, charging = false),
+            snapshot(minutes = 10, percent = 180, charging = false),
+            snapshot(minutes = 20, percent = 76, charging = false),
+            snapshot(minutes = 30, percent = -5, charging = false),
+        )
+
+        val assessment = engine.assess(samples)
+
+        assertEquals(76, assessment.currentPercent)
+        assertEquals(4, assessment.observedDropPercent)
+        assertEquals(12f, assessment.drainPercentPerHour)
+        assertEquals(BatteryGamingRecommendation.NORMAL, assessment.recommendation)
+        assertFalse(assessment.preventAggressiveProfiles)
+    }
+
+    @Test
+    fun `invalid only battery telemetry is unavailable rather than a plausible percentage`() {
+        val assessment = engine.assess(
+            listOf(
+                snapshot(minutes = 0, percent = 125, charging = false),
+                snapshot(minutes = 10, percent = -12, charging = false),
+            ),
+        )
+        assertNull(assessment.currentPercent)
+        assertNull(assessment.observedDropPercent)
+        assertNull(assessment.drainPercentPerHour)
+        assertEquals(BatteryGamingRecommendation.NORMAL, assessment.recommendation)
+    }
+
 }
