@@ -105,6 +105,12 @@ class AndroidDeviceCompatibilityProbeTest {
         assertEquals(CompatibilityGpuFamily.UNKNOWN, result.key.gpuFamily)
     }
 
+    @Test fun defaultAndroidProbeIsReadOnlyAndNeverEnablesVendorMutations() {
+        val observation = AndroidDeviceCompatibilityProbe.read(context)
+        assertFalse(observation.driverChanged)
+        assertFalse(observation.alternateDriverSelectable)
+    }
+
     @Test fun realProbeNeverAuthenticatesRuleJustBecauseItWasStored() {
         val result = AndroidDeviceCompatibilityProbe.read(
             context,

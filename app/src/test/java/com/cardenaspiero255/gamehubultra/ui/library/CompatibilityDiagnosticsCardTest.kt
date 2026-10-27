@@ -46,6 +46,67 @@ class CompatibilityDiagnosticsCardTest {
         rule.onNodeWithText("Hay una regla local sin evidencia autenticada; no se aplica.").assertIsDisplayed()
     }
 
+    @Test fun verifiedSuggestionIsNotAutomaticallyApplied() {
+        rule.setContent {
+            CompatibilityDiagnosticsContent(
+                snapshot,
+                CompatibilityDecision(CompatibilityStatus.KNOWN_GOOD)
+            )
+        }
+        rule.onNodeWithText(
+            "Existe una recomendación verificada; se requiere acción explícita."
+        ).assertIsDisplayed()
+    }
+
+    @Test fun ambiguousRulesRequireExplicitReviewRatherThanPickingAPreset() {
+        rule.setContent {
+            CompatibilityDiagnosticsContent(
+                snapshot,
+                CompatibilityDecision(CompatibilityStatus.AMBIGUOUS)
+            )
+        }
+        rule.onNodeWithText(
+            "Reglas contradictorias: configuración recomendada no verificada."
+        ).assertIsDisplayed()
+    }
+
+    @Test fun verifiedQualcommAdrenoAndExynosPowerVrHaveOnlyCategoryLabels() {
+        val variants = listOf(
+            VendorSocFamily.QUALCOMM to CompatibilityGpuFamily.ADRENO,
+            VendorSocFamily.EXYNOS to CompatibilityGpuFamily.POWERVR
+        )
+        for ((soc, gpu) in variants) {
+            rule.setContent {
+                CompatibilityDiagnosticsContent(
+                    snapshot.copy(key = snapshot.key.copy(
+                        socFamily = soc, gpuFamily = gpu
+                    )),
+                    CompatibilityDecision(CompatibilityStatus.NO_RECORD)
+                )
+            }
+            val label = if (soc == VendorSocFamily.QUALCOMM) {
+                "Qualcomm · Adreno · Android API 35"
+            } else {
+                "Exynos · PowerVR · Android API 35"
+            }
+            rule.onNodeWithText(label).assertIsDisplayed()
+        }
+    }
+
+    @Test fun absentVulkanAndUnknownGpuCannotBecomeVerified() {
+        rule.setContent {
+            CompatibilityDiagnosticsContent(
+                snapshot.copy(
+                    key = snapshot.key.copy(gpuFamily = CompatibilityGpuFamily.OTHER),
+                    vulkan = CapabilityEvidence.UNAVAILABLE
+                ),
+                CompatibilityDecision(CompatibilityStatus.NO_RECORD)
+            )
+        }
+        rule.onNodeWithText("MediaTek · Desconocida · Android API 35").assertIsDisplayed()
+        rule.onNodeWithText("OpenGL ES: verificado · Vulkan: no disponible").assertIsDisplayed()
+    }
+
     @Test fun unknownHardwareShowsInsufficientEvidenceRatherThanManufacturerGuess() {
         rule.setContent {
             CompatibilityDiagnosticsContent(

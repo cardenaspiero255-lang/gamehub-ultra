@@ -39,7 +39,12 @@ import kotlinx.coroutines.withContext
 
 /** CAR-56: only reads hardware evidence for this app and shows a safe diagnosis. */
 @Composable
-internal fun CompatibilityDiagnosticsCard(packageName: String) {
+internal fun CompatibilityDiagnosticsCard(
+    packageName: String,
+    readSnapshot: (Context) -> CompatibilityDeviceSnapshot = {
+        AndroidDeviceCompatibilityProbe.read(it)
+    }
+) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     var revision by remember(packageName) { mutableIntStateOf(0) }
@@ -58,7 +63,7 @@ internal fun CompatibilityDiagnosticsCard(packageName: String) {
     }
     LaunchedEffect(context, packageName, revision) {
         val (observed, assessment) = withContext(Dispatchers.IO) {
-            val readout = AndroidDeviceCompatibilityProbe.read(context)
+            val readout = readSnapshot(context)
             val saved = AndroidDeviceCompatibilityStore.load(context)
             // A locally stored record is NOT its own verifier.
             readout to DeviceCompatibilityDatabase.resolve(
