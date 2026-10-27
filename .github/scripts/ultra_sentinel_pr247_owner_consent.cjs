@@ -51,8 +51,9 @@ function selectAuthenticatedOwnerRun({runs,workflow,mainSha,headSha,jobs}={}){
   return incompleteReceipt;
  const latest=latestRun(runs);
  if(!latest||latest.run_attempt!==1||
-    latest.workflow_id!==workflow.id||latest.name!==NAME||
-    latest.path!==PATH+'@main'||
+    latest.workflow_id!==workflow.id||
+    latest.name!=='CAR29-PR247-owner-'+headSha||
+    latest.path!==PATH||
     latest.display_title!=='CAR29-PR247-owner-'+headSha||
     latest.event!=='workflow_dispatch'||latest.head_branch!=='main'||
     latest.head_sha!==mainSha||
