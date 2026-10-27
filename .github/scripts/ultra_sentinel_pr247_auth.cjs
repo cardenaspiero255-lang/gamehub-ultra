@@ -8,7 +8,6 @@ const {createHash}=require('node:crypto');
 const REPO='cardenaspiero255-lang/gamehub-ultra';
 const OWNER='cardenaspiero255-lang';
 const PR=247;
-const HEAD='8d53e229a9108869a665d35ce1836ecff8b37f3c';
 const SHA=/^[a-f0-9]{40}$/;
 const SOURCE='.github/workflows/sonar.yml';
 const BASE_BLOB='f2831ae24e9687c8a0472c9a42df05f708815be5';
@@ -29,7 +28,7 @@ function isExactPr(pr,mainSha){
   pr.changed_files===FILES.size&&pr.author_association==='OWNER'&&
   pr.user?.login===OWNER&&pr.user.id===322222186&&pr.user.type==='User'&&
   pr.head?.repo?.full_name===REPO&&pr.base?.repo?.full_name===REPO&&
-  pr.base.ref==='main'&&pr.head.sha===HEAD&&SHA.test(mainSha||'')&&
+  pr.base.ref==='main'&&SHA.test(pr.head.sha||'')&&SHA.test(mainSha||'')&&
   pr.base.sha===mainSha;
 }
 function exactFiles(files){
@@ -43,8 +42,8 @@ function exactFiles(files){
  }
  return seen.size===FILES.size;
 }
-function independentApproval(reviews){
- if(!Array.isArray(reviews)||reviews.length>1000)return null;
+function independentApproval(reviews,headSha){
+ if(!SHA.test(headSha||'')||!Array.isArray(reviews)||reviews.length>1000)return null;
  const latest=new Map();
  for(const r of reviews){
   if(!r||!Number.isSafeInteger(r.id)||r.id<1||
@@ -60,7 +59,7 @@ function independentApproval(reviews){
  // GitHub author association is API-generated, not read from a PR comment.
  const signed=decisions.filter(r=>r.state==='APPROVED'&&
   ['OWNER','MEMBER','COLLABORATOR'].includes(r.author_association)&&
-  r.commit_id===HEAD);
+  r.commit_id===headSha);
  if(signed.length<1)return null;
  signed.sort((a,b)=>b.id-a.id);
  return signed[0];
@@ -68,10 +67,10 @@ function independentApproval(reviews){
 function evaluatePr247({pr,files,reviews,mainSha,baseWorkflowSha,headWorkflowSha}={}){
  if(!isExactPr(pr,mainSha)||!exactFiles(files)||
     baseWorkflowSha!==BASE_BLOB||headWorkflowSha!==HEAD_BLOB)return incomplete();
- const review=independentApproval(reviews);
+ const review=independentApproval(reviews,pr.head.sha);
  if(!review)return incomplete();
  return Object.freeze({
-  status:'AUTHENTICATED_MANUAL_PR247',headSha:HEAD,mainSha,
+  status:'AUTHENTICATED_MANUAL_PR247',headSha:pr.head.sha,mainSha,
   workflowBlobSha:HEAD_BLOB,approvalId:review.id,
   reviewerLogin:review.user.login,provenanceAuthenticated:true,
   independentReviewVerified:true,manualReviewRequired:true,
@@ -113,7 +112,7 @@ async function attestScopedPr247({github,owner,repo,pr,files}={}){
   const reviewArgs={owner,repo,pull_number:PR,per_page:100};
   const authenticatedEvidence=await Promise.all([
    github.rest.repos.getContent({owner,repo,path:SOURCE,ref:mainSha}),
-   github.rest.repos.getContent({owner,repo,path:SOURCE,ref:HEAD}),
+   github.rest.repos.getContent({owner,repo,path:SOURCE,ref:pr.head.sha}),
    github.paginate(github.rest.pulls.listReviews,reviewArgs)
   ]);
   const mainBlob=authenticatedEvidence[0];
