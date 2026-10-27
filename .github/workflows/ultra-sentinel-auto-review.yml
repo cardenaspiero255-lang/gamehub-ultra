@@ -6,6 +6,9 @@ on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
     branches: [main]
+  pull_request_review:
+    types: [submitted, dismissed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -79,6 +82,22 @@ jobs:
               permitScopedOpaqueYaml:()=>false
             };
             const {attestScopedPr172,permitScopedOpaqueYaml}=scopedModule;
+            // Only the trusted main checkout can evaluate this separate
+            // GitHub-authenticated human review. No candidate code is executed.
+            const {attestScopedPr247,allowPr247ManualStructural} =
+              require(path.resolve(".github/scripts/ultra_sentinel_pr247_auth.cjs"));
+            const scopedAttestation=async args=>args.pr?.number===247?
+              attestScopedPr247(args):attestScopedPr172(args);
+            const validScopeStatus=(number,r)=>r?.status===(number===247?
+              'AUTHENTICATED_MANUAL_PR247':'SCOPED_AUTHENTICATED_MANUAL_REVIEW');
+            const sameScope=(number,a,b)=>{
+              const keys=number===247?
+                ['headSha','mainSha','workflowBlobSha','approvalId','reviewerLogin']:
+                ['headSha','mainSha','protectedRunId','protectedRunAttempt'];
+              return keys.every(key=>a?.[key]===b?.[key]);
+            };
+            const permittedStructural=(number,r)=>number===247?
+              allowPr247ManualStructural(r):permitScopedOpaqueYaml(r);
             const owner = context.repo.owner, repo = context.repo.repo;
             const n = Number(context.payload.pull_request?.number || context.payload.inputs?.pr_number);
             if (!Number.isSafeInteger(n) || n < 1) {
@@ -89,7 +108,7 @@ jobs:
               core.setFailed("Only open same-repository PRs can be reviewed"); return;
             }
             const files = await github.paginate(github.rest.pulls.listFiles,{owner,repo,pull_number:n,per_page:100});
-            const scopedProtected=await attestScopedPr172({github,owner,repo,pr,files});
+            const scopedProtected=await scopedAttestation({github,owner,repo,pr,files});
             // This trusted base workflow still executes if a PR deletes its
             // own .yml. Never treat removal of Sentinel controls as safe.
             const protectedChanges=evaluateProtectedChanges(files,{expectedCount:pr.changed_files});
@@ -266,8 +285,8 @@ jobs:
             const old = await github.paginate(github.rest.issues.listComments,{owner,repo,issue_number:n,per_page:100});
             annotate(evidence,old,{pr:n,sha:pr.head.sha});
             const report = buildReport({pr:n,sha:pr.head.sha,analysis:evidence,causalGraph});
-            const scopedCandidate=scopedProtected.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&
-              permitScopedOpaqueYaml(structuralYaml);
+            const scopedCandidate=validScopeStatus(n,scopedProtected)&&
+              permittedStructural(n,structuralYaml);
             // Report remains explicitly preliminary until final no-await attestation.
             report.frontier={ci,repairs,supplyChain,structuralYaml,protectedChanges,
               scopedProtected,scopedAccepted:false,scopeDecision:'PENDING_TERMINAL_CHECK'};
@@ -296,13 +315,10 @@ jobs:
             await core.summary.addHeading("Ultra Sentinel Core").addRaw(body).write();
             // Re-read trusted evidence *after* all async analysis and summary work.
             // No further await is allowed before applying the manual-review waiver.
-            const terminalScopedProtected=await attestScopedPr172({github,owner,repo,pr,files});
+            const terminalScopedProtected=await scopedAttestation({github,owner,repo,pr,files});
             const scopedAccepted=scopedCandidate&&
-              terminalScopedProtected.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&
-              terminalScopedProtected.headSha===scopedProtected.headSha&&
-              terminalScopedProtected.mainSha===scopedProtected.mainSha&&
-              terminalScopedProtected.protectedRunId===scopedProtected.protectedRunId&&
-              terminalScopedProtected.protectedRunAttempt===scopedProtected.protectedRunAttempt;
+              validScopeStatus(n,terminalScopedProtected)&&
+              sameScope(n,scopedProtected,terminalScopedProtected);
             report.frontier.scopedProtected=terminalScopedProtected;
             report.frontier.scopedAccepted=scopedAccepted;
             report.frontier.scopeDecision=scopedAccepted?'TERMINAL_AUTHENTICATED_MANUAL_REVIEW':'FAIL_CLOSED';
@@ -349,16 +365,20 @@ jobs:
               // may change the step's cwd; never resolve a reviewer from cwd.
               const trustedRoot=process.env.GITHUB_WORKSPACE;
               const scopePath=typeof trustedRoot==='string'&&path.isAbsolute(trustedRoot)?
-                path.resolve(trustedRoot,'.github/scripts/ultra_sentinel_pr172_scope.cjs'):'';
+                path.resolve(trustedRoot,report.pr===247?
+                  '.github/scripts/ultra_sentinel_pr247_auth.cjs':
+                  '.github/scripts/ultra_sentinel_pr172_scope.cjs'):'';
               // A missing trusted checkout or malformed review target must
               // FAIL CLOSED; diagnostics reveal only booleans, never secrets.
-              if(![172,221].includes(report.pr)||!fs.existsSync(scopePath)){
+              if(![172,221,247].includes(report.pr)||!fs.existsSync(scopePath)){
                 core.warning('Trusted reviewer path check: workspace_absolute='+Boolean(scopePath)+
                     ', module_exists='+fs.existsSync(scopePath)+
                     ', cwd_matches_workspace='+(process.cwd()===trustedRoot));
                 core.setFailed('Post-upload attestation changed: missing trusted reviewer');return;
               }
-              const {attestScopedPr172}=require(scopePath);
+              const scopedModule=require(scopePath);
+              const attestCurrent=report.pr===247?
+                scopedModule.attestScopedPr247:scopedModule.attestScopedPr172;
               const owner=context.repo.owner,repo=context.repo.repo;
               const {data:pr}=await github.rest.pulls.get({owner,repo,pull_number:report.pr});
               if(pr.head.sha!==report.sha){
@@ -366,12 +386,16 @@ jobs:
               }
               const files=await github.paginate(github.rest.pulls.listFiles,
                 {owner,repo,pull_number:report.pr,per_page:100});
-              const current=await attestScopedPr172({github,owner,repo,pr,files});
-              if(current.status!=='SCOPED_AUTHENTICATED_MANUAL_REVIEW'||
-                 stored?.status!=='SCOPED_AUTHENTICATED_MANUAL_REVIEW'){
+              const current=await attestCurrent({github,owner,repo,pr,files});
+              const expectedStatus=report.pr===247?'AUTHENTICATED_MANUAL_PR247':
+                'SCOPED_AUTHENTICATED_MANUAL_REVIEW';
+              if(current.status!==expectedStatus||stored?.status!==expectedStatus){
                 core.setFailed('Post-upload attestation changed: protected run unavailable');return;
               }
-              for(const field of ['headSha','mainSha','protectedRunId','protectedRunAttempt']){
+              const trustedFields=report.pr===247?
+                ['headSha','mainSha','workflowBlobSha','approvalId','reviewerLogin']:
+                ['headSha','mainSha','protectedRunId','protectedRunAttempt'];
+              for(const field of trustedFields){
                 if(current[field]!==stored[field]){
                   core.setFailed('Post-upload attestation changed: protected run superseded');return;
                 }

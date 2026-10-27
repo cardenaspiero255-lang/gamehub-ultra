@@ -1,0 +1,24 @@
+name: CAR-29 PR247 Adversarial Authorization Tests
+# Unprivileged PR tests. Never load SONAR_TOKEN or trusted-reviewer credentials.
+on:
+  push:
+    branches: [security/car29-pr247-exact-manual-attestation-20261026]
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/scripts/ultra_sentinel_pr247_auth*'
+      - '.github/workflows/ultra-sentinel-pr247-contract.yml'
+permissions:
+  contents: read
+jobs:
+  exact-approval-contract:
+    name: PR247 exact authenticated approval adversarial tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout unprivileged test candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Run exact SHA and human review adversarial suite
+        run: node --test .github/scripts/ultra_sentinel_pr247_auth.test.cjs
