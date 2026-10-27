@@ -13,6 +13,8 @@ const PATH='.github/workflows/'+WORKFLOW;
 const NAME='CAR29 PR247 Sole-Maintainer Consent';
 const JOB='Authenticated owner consent for PR247 exact SHA';
 const SHA=/^[a-f0-9]{40}$/;
+const BASE_BLOB='f2831ae24e9687c8a0472c9a42df05f708815be5';
+const HEAD_BLOB='5d74541253fa867a7dbea9370be5facfc1be7bf8';
 const incomplete=()=>Object.freeze({
  status:'INCOMPLETE',provenanceAuthenticated:false,manualReviewRequired:true,
  independentReviewVerified:false,autoApproveAllowed:false,autoMergeAllowed:false
@@ -100,8 +102,8 @@ async function attestOwnerConsentPr247({github,owner,repo,pr,files}={}){
    github.rest.repos.getContent({owner,repo,path:'.github/workflows/sonar.yml',ref:mainSha}),
    github.rest.repos.getContent({owner,repo,path:'.github/workflows/sonar.yml',ref:pr.head.sha})
   ]);
-  if(!scope.verifiedBlob(evidence[0].data,scope.BASE_BLOB)||
-     !scope.verifiedBlob(evidence[1].data,scope.HEAD_BLOB))return incomplete();
+  if(!scope.verifiedBlob(evidence[0].data,BASE_BLOB)||
+     !scope.verifiedBlob(evidence[1].data,HEAD_BLOB))return incomplete();
   const getRuns=async()=>((await github.rest.actions.listWorkflowRuns({
    owner,repo,workflow_id:wf.id,event:'workflow_dispatch',
    per_page:100,page:1})).data);

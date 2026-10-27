@@ -143,4 +143,4 @@ async function attestScopedPr247({github,owner,repo,pr,files}={}){
  }catch(_){return incomplete();}
 }
 module.exports={evaluatePr247,allowPr247ManualStructural,attestScopedPr247,
- isExactPr,exactFiles,verifiedBlob,BASE_BLOB,HEAD_BLOB};
+ isExactPr,exactFiles,verifiedBlob};
