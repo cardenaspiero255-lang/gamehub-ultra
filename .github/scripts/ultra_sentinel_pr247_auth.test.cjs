@@ -76,6 +76,15 @@ test('extra, missing, duplicate, modified or reordered files cannot silently cha
  const reordered=fixture();reordered.files.reverse();
  assert.equal(evaluatePr247(reordered).status,'AUTHENTICATED_MANUAL_PR247');
 });
+test('a new main-aligned PR247 commit requires a fresh approval of the new HEAD',()=>{
+ const d=fixture();
+ d.pr.head.sha='b'.repeat(40);
+ assert.equal(evaluatePr247(d).status,'INCOMPLETE');
+ d.reviews[0].commit_id=d.pr.head.sha;
+ const current=evaluatePr247(d);
+ assert.equal(current.status,'AUTHENTICATED_MANUAL_PR247');
+ assert.equal(current.headSha,d.pr.head.sha);
+});
 test('changed scanner workflow or trusted baseline blob is never accepted',()=>{
  for(const change of [
   d=>d.headWorkflowSha='a'.repeat(40),
