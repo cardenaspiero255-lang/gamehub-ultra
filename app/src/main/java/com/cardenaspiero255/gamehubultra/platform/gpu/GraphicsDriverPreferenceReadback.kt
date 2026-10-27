@@ -56,7 +56,10 @@ object GraphicsDriverPreferenceReadback {
         if (!validPackage(packageName)) {
             return DriverPreferenceReadback(DriverPreferenceStatus.UNVERIFIABLE)
         }
-        if (packagesValue == null && driversValue == null) {
+        // Android treats jointly empty settings exactly like no per-app overrides.
+        // Whitespace-only tokens are NOT empty and remain untrusted.
+        if ((packagesValue == null && driversValue == null) ||
+            (packagesValue == "" && driversValue == "")) {
             return if (requested == OpenGlDriverPreference.SYSTEM) {
                 DriverPreferenceReadback(DriverPreferenceStatus.SYSTEM_DEFAULT, OpenGlDriverPreference.SYSTEM)
             } else {
@@ -66,8 +69,10 @@ object GraphicsDriverPreferenceReadback {
         if (packagesValue.isNullOrBlank() || driversValue.isNullOrBlank()) {
             return DriverPreferenceReadback(DriverPreferenceStatus.UNVERIFIABLE)
         }
-        val packages = packagesValue.split(',').map(String::trim)
-        val drivers = driversValue.split(',').map(String::trim)
+        // GraphicsEnvironment compares raw comma-delimited tokens literally.
+        // Trimming would forge a confirmation Android did not actually select.
+        val packages = packagesValue.split(',')
+        val drivers = driversValue.split(',')
         if (packages.size != drivers.size ||
             packages.any { !validPackage(it) } ||
             packages.size != packages.distinct().size ||
