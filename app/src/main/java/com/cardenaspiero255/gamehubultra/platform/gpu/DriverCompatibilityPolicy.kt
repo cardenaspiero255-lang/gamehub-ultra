@@ -54,30 +54,29 @@ object DriverCompatibilityPolicy {
         verifiedSelectionApi: Boolean,
         availableDrivers: List<VerifiedAlternateDriver>
     ): DriverLaunchDecision {
-        fun system(reason: DriverFallbackReason) =
-            DriverLaunchDecision(DriverLaunchRoute.SYSTEM, reason)
-
+        // Keep the system fallback explicit: this function makes no recursive
+        // calls and does not attempt to install or switch graphics drivers.
         if (!packagePattern.matches(preference.packageName)) {
-            return system(DriverFallbackReason.INVALID_PACKAGE)
+            return DriverLaunchDecision(DriverLaunchRoute.SYSTEM, DriverFallbackReason.INVALID_PACKAGE)
         }
         val requested = preference.preferredDriverId
-            ?: return system(DriverFallbackReason.SYSTEM_PREFERENCE)
+            ?: return DriverLaunchDecision(DriverLaunchRoute.SYSTEM, DriverFallbackReason.SYSTEM_PREFERENCE)
         if (!driverPattern.matches(requested)) {
-            return system(DriverFallbackReason.INVALID_DRIVER_ID)
+            return DriverLaunchDecision(DriverLaunchRoute.SYSTEM, DriverFallbackReason.INVALID_DRIVER_ID)
         }
         if (!verifiedSelectionApi) {
-            return system(DriverFallbackReason.SELECTION_UNVERIFIED)
+            return DriverLaunchDecision(DriverLaunchRoute.SYSTEM, DriverFallbackReason.SELECTION_UNVERIFIED)
         }
         val matching = availableDrivers.filter { it.driverId == requested }
-        if (matching.size > 1) return system(DriverFallbackReason.AMBIGUOUS_DRIVER)
+        if (matching.size > 1) return DriverLaunchDecision(DriverLaunchRoute.SYSTEM, DriverFallbackReason.AMBIGUOUS_DRIVER)
         val selected = matching.singleOrNull()
-            ?: return system(DriverFallbackReason.DRIVER_UNAVAILABLE)
-        if (!selected.installed) return system(DriverFallbackReason.DRIVER_UNAVAILABLE)
+            ?: return DriverLaunchDecision(DriverLaunchRoute.SYSTEM, DriverFallbackReason.DRIVER_UNAVAILABLE)
+        if (!selected.installed) return DriverLaunchDecision(DriverLaunchRoute.SYSTEM, DriverFallbackReason.DRIVER_UNAVAILABLE)
         if (preference.packageName !in selected.allowedPackages) {
-            return system(DriverFallbackReason.GAME_UNSUPPORTED)
+            return DriverLaunchDecision(DriverLaunchRoute.SYSTEM, DriverFallbackReason.GAME_UNSUPPORTED)
         }
         if (!selected.selectionBackendVerified || !selected.prelaunchSelectionConfirmed) {
-            return system(DriverFallbackReason.SELECTION_UNVERIFIED)
+            return DriverLaunchDecision(DriverLaunchRoute.SYSTEM, DriverFallbackReason.SELECTION_UNVERIFIED)
         }
         return DriverLaunchDecision(
             route = DriverLaunchRoute.ALTERNATE_READY,
