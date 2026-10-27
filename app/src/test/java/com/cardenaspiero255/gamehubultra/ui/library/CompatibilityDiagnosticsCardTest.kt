@@ -70,27 +70,30 @@ class CompatibilityDiagnosticsCardTest {
         ).assertIsDisplayed()
     }
 
-    @Test fun verifiedQualcommAdrenoAndExynosPowerVrHaveOnlyCategoryLabels() {
-        val variants = listOf(
-            VendorSocFamily.QUALCOMM to CompatibilityGpuFamily.ADRENO,
-            VendorSocFamily.EXYNOS to CompatibilityGpuFamily.POWERVR
-        )
-        for ((soc, gpu) in variants) {
-            rule.setContent {
-                CompatibilityDiagnosticsContent(
-                    snapshot.copy(key = snapshot.key.copy(
-                        socFamily = soc, gpuFamily = gpu
-                    )),
-                    CompatibilityDecision(CompatibilityStatus.NO_RECORD)
-                )
-            }
-            val label = if (soc == VendorSocFamily.QUALCOMM) {
-                "Qualcomm · Adreno · Android API 35"
-            } else {
-                "Exynos · PowerVR · Android API 35"
-            }
-            rule.onNodeWithText(label).assertIsDisplayed()
+    @Test fun observedQualcommAdrenoIsReportedWithoutAnAppliedProfile() {
+        rule.setContent {
+            CompatibilityDiagnosticsContent(
+                snapshot.copy(key = snapshot.key.copy(
+                    socFamily = VendorSocFamily.QUALCOMM,
+                    gpuFamily = CompatibilityGpuFamily.ADRENO
+                )),
+                CompatibilityDecision(CompatibilityStatus.NO_RECORD)
+            )
         }
+        rule.onNodeWithText("Qualcomm · Adreno · Android API 35").assertIsDisplayed()
+    }
+
+    @Test fun observedExynosPowerVrShowsOnlyTheHardwareCategory() {
+        rule.setContent {
+            CompatibilityDiagnosticsContent(
+                snapshot.copy(key = snapshot.key.copy(
+                    socFamily = VendorSocFamily.EXYNOS,
+                    gpuFamily = CompatibilityGpuFamily.POWERVR
+                )),
+                CompatibilityDecision(CompatibilityStatus.NO_RECORD)
+            )
+        }
+        rule.onNodeWithText("Exynos · PowerVR · Android API 35").assertIsDisplayed()
     }
 
     @Test fun absentVulkanAndUnknownGpuCannotBecomeVerified() {
