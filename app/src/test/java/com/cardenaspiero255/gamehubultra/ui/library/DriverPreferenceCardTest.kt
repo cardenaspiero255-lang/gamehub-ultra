@@ -91,8 +91,9 @@ class DriverPreferenceCardTest {
             "Preferencia pendiente: debes seleccionarla también para este juego en Opciones de desarrollador de Android. GameHub no la aplica automáticamente."
         ).assertIsDisplayed()
         androidMapping(packageName, "native")
-        // A new composition picks up the externally changed readback.
-        composeRule.setContent { DriverPreferenceCard(packageName) }
+        // Recheck the same selected chip to refresh the readback after Android
+        // updates its preference without remounting the Compose tree.
+        composeRule.onNodeWithText("Nativo").performClick()
         composeRule.onNodeWithText(
             "Preferencia de Android confirmada para este paquete. El driver cargado dentro del juego aún no está verificado."
         ).assertIsDisplayed()
