@@ -26,6 +26,19 @@ def verify(path: Path) -> tuple[int, int]:
         source = root.findall("./package/sourcefile/line")
         if not source:
             raise ValueError("JaCoCo report has no source line evidence")
+        # Aggregate counters alone cannot prove unique source-line evidence.
+        # Identify each measured line within its package and source file.
+        identities = set()
+        for package in root.findall("package"):
+            for source_file in package.findall("sourcefile"):
+                for line in source_file.findall("line"):
+                    number = int(line.attrib["nr"])
+                    if number <= 0:
+                        raise ValueError("JaCoCo line number must be positive")
+                    identity = (package.get("name"), source_file.get("name"), number)
+                    if identity in identities:
+                        raise ValueError("Duplicate JaCoCo source line")
+                    identities.add(identity)
         source_covered = 0
         source_missed = 0
         for line in source:
