@@ -67,6 +67,9 @@ jobs:
               permitScopedOpaqueYaml:()=>false
             };
             const {attestScopedPr172,permitScopedOpaqueYaml}=scopedModule;
+            // Separate exact manual GitHub approval, loaded only from trusted main.
+            const {attestScopedPr247,allowPr247ManualStructural}=
+              require(path.resolve(".github/scripts/ultra_sentinel_pr247_auth.cjs"));
             const deployed=fs.existsSync(path.resolve(".github/scripts/ultra_sentinel_yaml_ast.cjs"))&&
               fs.existsSync(path.resolve(".github/scripts/ultra_sentinel_policy.cjs"))&&
               fs.existsSync(path.resolve("package-lock.json"));
@@ -86,6 +89,8 @@ jobs:
             const files = await github.paginate(github.rest.pulls.listFiles,
               {owner,repo,pull_number:number,per_page:100});
             const scopedProtected=await attestScopedPr172({github,owner,repo,pr,files});
+            const pr247Protected=pr.number===247?
+              await attestScopedPr247({github,owner,repo,pr,files}):null;
             // Independently obtain bounded Kotlin full-file context at the
             // same immutable PR SHA; never execute or checkout candidate code.
             const evidenceFiles=files.map(item=>({...item}));
@@ -210,14 +215,28 @@ jobs:
               .addRaw(markdown(result)+'\nStructural YAML: '+(structural?.status||'NOT_DEPLOYED_ON_TRUSTED_MAIN')).write();
             // Reauthenticate *after* all async work, immediately before YAML waiver.
             const terminalScopedProtected=await attestScopedPr172({github,owner,repo,pr,files});
+            const pr247Candidate=number===247&&
+              pr247Protected?.status==='AUTHENTICATED_MANUAL_PR247'&&
+              allowPr247ManualStructural(structural);
+            const terminalPr247=pr247Candidate?
+              await attestScopedPr247({github,owner,repo,pr,files}):null;
+            const pr247Accepted=pr247Candidate&&
+              terminalPr247?.status==='AUTHENTICATED_MANUAL_PR247'&&
+              terminalPr247.headSha===pr247Protected.headSha&&
+              terminalPr247.mainSha===pr247Protected.mainSha&&
+              terminalPr247.workflowBlobSha===pr247Protected.workflowBlobSha&&
+              terminalPr247.approvalId===pr247Protected.approvalId&&
+              terminalPr247.reviewerLogin===pr247Protected.reviewerLogin;
             const scopedAccepted=scopedProtected.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&
               terminalScopedProtected.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&
               terminalScopedProtected.headSha===scopedProtected.headSha&&
               terminalScopedProtected.mainSha===scopedProtected.mainSha&&
               terminalScopedProtected.protectedRunId===scopedProtected.protectedRunId&&
               terminalScopedProtected.protectedRunAttempt===scopedProtected.protectedRunAttempt&&
-              permitScopedOpaqueYaml(structural);
-            report.scopedProtectedDelta=terminalScopedProtected;
+              permitScopedOpaqueYaml(structural)
+              ||pr247Accepted;
+            report.scopedProtectedDelta=pr247Accepted?
+              terminalPr247:terminalScopedProtected;
             report.scopedAccepted=scopedAccepted;
             fs.writeFileSync(path.join(dest,"report.json"),JSON.stringify(report,null,2)+"\n",
               {encoding:"utf8",mode:0o600});
@@ -247,6 +266,35 @@ jobs:
             const report=JSON.parse(fs.readFileSync(
               path.join(process.env.RUNNER_TEMP,'sentinel-independent','report.json'),'utf8'));
             if(report.scopedAccepted===true){
+              if(report.pr===247){
+                // No privileged candidate execution, and no synthetic approval:
+                // authenticate the exact GitHub human review after the last upload.
+                const root=process.env.GITHUB_WORKSPACE;
+                const trustedPath=typeof root==='string'&&path.isAbsolute(root)?
+                  path.resolve(root,'.github/scripts/ultra_sentinel_pr247_auth.cjs'):'';
+                if(!trustedPath||!fs.existsSync(trustedPath)){
+                  core.setFailed('Post-upload PR247 trusted reviewer absent');return;
+                }
+                const {attestScopedPr247}=require(trustedPath);
+                const owner=context.repo.owner,repo=context.repo.repo;
+                const {data:pr}=await github.rest.pulls.get({owner,repo,pull_number:247});
+                if(pr.head.sha!==report.sha){
+                  core.setFailed('Post-upload PR247 HEAD moved');return;
+                }
+                const files=await github.paginate(github.rest.pulls.listFiles,
+                  {owner,repo,pull_number:247,per_page:100});
+                const current247=await attestScopedPr247({github,owner,repo,pr,files});
+                const stored247=report.scopedProtectedDelta;
+                if(current247.status!=='AUTHENTICATED_MANUAL_PR247'||
+                   stored247?.status!=='AUTHENTICATED_MANUAL_PR247'){
+                  core.setFailed('Post-upload PR247 human approval changed');return;
+                }
+                for(const field of ['headSha','mainSha','workflowBlobSha','approvalId','reviewerLogin']){
+                  if(current247[field]!==stored247[field]){
+                    core.setFailed('Post-upload PR247 evidence superseded');return;
+                  }
+                }
+              }else{
               const stored=report.scopedProtectedDelta;
               // The job's trusted checkout is in GITHUB_WORKSPACE. The event
               // may change the step's cwd; never resolve a reviewer from cwd.
@@ -278,5 +326,6 @@ jobs:
                 if(current[field]!==stored[field]){
                   core.setFailed('Post-upload attestation changed: protected run superseded');return;
                 }
+              }
               }
             }

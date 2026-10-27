@@ -24,7 +24,12 @@ test('Core gate requires 150k executed checks across exactly 15 independent shar
  // 11 newly registered Post-CI state tests are executed in the b1 baseline.
  const postCiStateTests=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_post_ci_state.test.cjs'),'utf8');
  assert.equal((postCiStateTests.match(/^test\(/gm)||[]).length,11);
- assert.equal(shards.BASELINE_B1_TESTS,11802+11);
+ // All eight CAR-29 PR247 authorization regressions remain registered:
+ // a stale SHA or self-review may never disappear behind a lower test count.
+ const pr247AuthTests=fs.readFileSync(path.resolve(__dirname,
+  'ultra_sentinel_pr247_auth.test.cjs'),'utf8');
+ assert.equal((pr247AuthTests.match(/^test\(/gm)||[]).length,8);
+ assert.equal(shards.BASELINE_B1_TESTS,11802+11+8);
  assert.match(workflow,/\.github\/sentinel-fixtures\/\*\*/);
  const selfReview=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-self-review.yml'),'utf8');
  assert.equal(selfReview.split(".github/sentinel-fixtures/**").length-1,2);
