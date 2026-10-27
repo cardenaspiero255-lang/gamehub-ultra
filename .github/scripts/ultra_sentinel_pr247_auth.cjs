@@ -2,7 +2,8 @@
 /**
  * CAR-29: exact, read-only PR #247 authorization. This module MUST execute
  * from trusted main, never from PR code. No approval may be generated here.
- * GitHub-authenticated, independent human PR review is mandatory.
+ * Either an independent human review or an explicit authenticated owner-only
+ * workflow_dispatch receipt is required. No action here may approve or merge.
  */
 const {createHash}=require('node:crypto');
 const REPO='cardenaspiero255-lang/gamehub-ultra';
@@ -122,7 +123,12 @@ async function attestScopedPr247({github,owner,repo,pr,files}={}){
      !verifiedBlob(headBlob.data,HEAD_BLOB))return incomplete();
   const proof=evaluatePr247({pr,files,reviews,mainSha,
    baseWorkflowSha:mainBlob.data.sha,headWorkflowSha:headBlob.data.sha});
-  if(proof.status!=='AUTHENTICATED_MANUAL_PR247')return incomplete();
+  if(proof.status!=='AUTHENTICATED_MANUAL_PR247'){
+    // No GitHub self-review: a distinct explicit owner workflow_dispatch run
+    // may authenticate consent but never create or impersonate an approval.
+    return require('./ultra_sentinel_pr247_owner_consent.cjs')
+      .attestOwnerConsentPr247({github,owner,repo,pr,files});
+  }
   // Check the live PR, file list, human reviews and main HEAD again.
   // Any SHA movement or review dismissal fails closed, never reuse a prior approval.
   const fresh=(await github.rest.pulls.get({owner,repo,pull_number:PR})).data;
@@ -136,4 +142,5 @@ async function attestScopedPr247({github,owner,repo,pr,files}={}){
   return final;
  }catch(_){return incomplete();}
 }
-module.exports={evaluatePr247,allowPr247ManualStructural,attestScopedPr247};
+module.exports={evaluatePr247,allowPr247ManualStructural,attestScopedPr247,
+ isExactPr,exactFiles,verifiedBlob};

@@ -303,17 +303,23 @@ jobs:
             // No further await is allowed before applying the manual-review waiver.
             const terminalScopedProtected=await attestScopedPr172({github,owner,repo,pr,files});
             const pr247Candidate=n===247&&
-              pr247Protected?.status==='AUTHENTICATED_MANUAL_PR247'&&
+              (pr247Protected?.status==='AUTHENTICATED_MANUAL_PR247'||
+               pr247Protected?.status==='AUTHENTICATED_OWNER_CONSENT_PR247')&&
               allowPr247ManualStructural(structuralYaml);
             const terminalPr247=pr247Candidate?
               await attestScopedPr247({github,owner,repo,pr,files}):null;
             const pr247Accepted=pr247Candidate&&
-              terminalPr247?.status==='AUTHENTICATED_MANUAL_PR247'&&
+              terminalPr247?.status===pr247Protected?.status&&
+              (terminalPr247?.status==='AUTHENTICATED_MANUAL_PR247'||
+               terminalPr247?.status==='AUTHENTICATED_OWNER_CONSENT_PR247')&&
               terminalPr247.headSha===pr247Protected.headSha&&
               terminalPr247.mainSha===pr247Protected.mainSha&&
               terminalPr247.workflowBlobSha===pr247Protected.workflowBlobSha&&
               terminalPr247.approvalId===pr247Protected.approvalId&&
-              terminalPr247.reviewerLogin===pr247Protected.reviewerLogin;
+              terminalPr247.reviewerLogin===pr247Protected.reviewerLogin&&
+              terminalPr247.ownerConsentRunId===pr247Protected.ownerConsentRunId&&
+              terminalPr247.ownerConsentAttempt===pr247Protected.ownerConsentAttempt&&
+              terminalPr247.ownerLogin===pr247Protected.ownerLogin;
             const scopedAccepted=scopedCandidate&&
               terminalScopedProtected.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&
               terminalScopedProtected.headSha===scopedProtected.headSha&&
@@ -382,11 +388,12 @@ jobs:
                   {owner,repo,pull_number:247,per_page:100});
                 const current247=await attestScopedPr247({github,owner,repo,pr,files});
                 const stored247=report.frontier.scopedProtected;
-                if(current247.status!=='AUTHENTICATED_MANUAL_PR247'||
-                   stored247?.status!=='AUTHENTICATED_MANUAL_PR247'){
+                if(!['AUTHENTICATED_MANUAL_PR247','AUTHENTICATED_OWNER_CONSENT_PR247']
+                     .includes(current247.status)||stored247?.status!==current247.status){
                   core.setFailed('Post-upload PR247 human approval changed');return;
                 }
-                for(const field of ['headSha','mainSha','workflowBlobSha','approvalId','reviewerLogin']){
+                for(const field of ['headSha','mainSha','workflowBlobSha','approvalId','reviewerLogin',
+                  'ownerConsentRunId','ownerConsentAttempt','ownerLogin']){
                   if(current247[field]!==stored247[field]){
                     core.setFailed('Post-upload PR247 evidence superseded');return;
                   }
