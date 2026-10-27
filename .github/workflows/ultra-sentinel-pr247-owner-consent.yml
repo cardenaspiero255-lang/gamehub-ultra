@@ -1,0 +1,40 @@
+name: CAR29 PR247 Sole-Maintainer Consent
+run-name: CAR29-PR247-owner-${{ inputs.pr_head_sha }}
+
+# Read-only owner-created workflow_dispatch. Never executes the PR HEAD.
+on:
+  workflow_dispatch:
+    inputs:
+      pr_head_sha:
+        description: "Current exact PR #247 commit SHA"
+        required: true
+        type: string
+      confirm:
+        description: "Enter exactly AUTORIZO-PR247-CAR29"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  owner-authorization:
+    name: Authenticated owner consent for PR247 exact SHA
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'cardenaspiero255-lang' &&
+      github.triggering_actor == 'cardenaspiero255-lang' &&
+      github.actor_id == '322222186'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout trusted main-only owner verifier
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            .github/scripts/ultra_sentinel_pr247_owner_dispatch.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Validate SHA, five blobs and explicit owner identity
+        run: python3 .github/scripts/ultra_sentinel_pr247_owner_dispatch.py

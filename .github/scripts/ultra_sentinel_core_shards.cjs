@@ -29,10 +29,10 @@ const MINIMUM=500000;
 // Baseline b1 counts all registered tests, including 12 prior round-six regressions
 // and 11 genuine post-CI state transition regressions added by PR #217.
 // CI on PR #251 (run #40432526993, shard b1) proved 11,821 registrations:
-// the 11,813 prior tests plus 8 exact-PR247 manual-auth adversarial tests.
+// the 11,813 prior tests plus 8 PR247 authorization and 6 owner-consent tests.
 // Do not lower the count or replace exact accounting with a minimum-only gate.
 const BASELINE_B0_TESTS=10242;
-const BASELINE_B1_TESTS=11821;
+const BASELINE_B1_TESTS=11828;
 const BASELINE_TEST_COUNTS=Object.freeze({b0:BASELINE_B0_TESTS,b1:BASELINE_B1_TESTS});
 
 function testFiles(root=ROOT){
