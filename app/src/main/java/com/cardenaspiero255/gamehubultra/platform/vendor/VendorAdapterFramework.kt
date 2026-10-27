@@ -78,26 +78,33 @@ object VendorAdapterFramework {
     ): VendorAdapterDecision {
         val family = detectFamily(observation)
 
-        fun generic(reason: VendorAdapterReason) = VendorAdapterDecision(
-            family, VendorAdapterRoute.GENERIC_ANDROID, reason
-        )
-
+        // Emit explicit decisions. No recursion, reflection or vendor API calls.
         if (family == VendorSocFamily.GENERIC) {
-            return generic(VendorAdapterReason.SOC_UNVERIFIED)
+            return VendorAdapterDecision(
+                family, VendorAdapterRoute.GENERIC_ANDROID, VendorAdapterReason.SOC_UNVERIFIED
+            )
         }
         val eligible = adapters.filter { it.family == family }
-        if (eligible.isEmpty()) return generic(VendorAdapterReason.NO_VERIFIED_ADAPTER)
-        if (eligible.size != 1) return generic(VendorAdapterReason.AMBIGUOUS_ADAPTER)
+        if (eligible.isEmpty()) return VendorAdapterDecision(
+                family, VendorAdapterRoute.GENERIC_ANDROID, VendorAdapterReason.NO_VERIFIED_ADAPTER
+            )
+        if (eligible.size != 1) return VendorAdapterDecision(
+                family, VendorAdapterRoute.GENERIC_ANDROID, VendorAdapterReason.AMBIGUOUS_ADAPTER
+            )
 
         val adapter = eligible.single()
         if (!adapterIdPattern.matches(adapter.adapterId)) {
-            return generic(VendorAdapterReason.INVALID_ADAPTER)
+            return VendorAdapterDecision(
+                family, VendorAdapterRoute.GENERIC_ANDROID, VendorAdapterReason.INVALID_ADAPTER
+            )
         }
         val snapshot = runCatching { adapter.readOnlyCapabilities() }.getOrNull()
         if (snapshot == null || !snapshot.publicAndroidEvidence ||
             snapshot.capabilities.isEmpty()
         ) {
-            return generic(VendorAdapterReason.NO_VERIFIED_READOUT)
+            return VendorAdapterDecision(
+                family, VendorAdapterRoute.GENERIC_ANDROID, VendorAdapterReason.NO_VERIFIED_READOUT
+            )
         }
         return VendorAdapterDecision(
             family = family,
