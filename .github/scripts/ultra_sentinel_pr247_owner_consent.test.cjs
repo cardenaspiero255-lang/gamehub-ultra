@@ -9,8 +9,8 @@ const WF_NAME='CAR29 PR247 Sole-Maintainer Consent';
 const JOB='Authenticated owner consent for PR247 exact SHA';
 const ID=123456;
 function goodRun(){
- return {id:9101,workflow_id:ID,name:WF_NAME,
-  path:WF_PATH+'@main',display_title:'CAR29-PR247-owner-'+HEAD,
+ return {id:9101,workflow_id:ID,name:'CAR29-PR247-owner-'+HEAD,
+  path:WF_PATH,display_title:'CAR29-PR247-owner-'+HEAD,
   event:'workflow_dispatch',head_branch:'main',head_sha:MAIN,
   repository:{full_name:'cardenaspiero255-lang/gamehub-ultra'},
   head_repository:{full_name:'cardenaspiero255-lang/gamehub-ultra'},
@@ -38,7 +38,10 @@ test('missing consent and unauthenticated workflow identities never pass',()=>{
   d=>d.workflow.state='disabled_manually',
   d=>d.workflow.path='.github/workflows/untrusted.yml',
   d=>d.runs.workflow_runs[0].workflow_id=ID+1,
-  d=>d.runs.workflow_runs[0].path='.github/workflows/untrusted.yml@main',
+  d=>d.runs.workflow_runs[0].path='.github/workflows/untrusted.yml',
+  d=>d.runs.workflow_runs[0].path=WF_PATH+'@main',
+  d=>d.runs.workflow_runs[0].name=WF_NAME,
+  d=>d.runs.workflow_runs[0].name='CAR29-PR247-owner-'+'a'.repeat(40),
   d=>d.runs.workflow_runs[0].repository.full_name='attacker/repo',
   d=>d.runs.workflow_runs[0].event='pull_request_target'
  ]){const d=fixture();change(d);assert.equal(judge(d).status,'INCOMPLETE');}
