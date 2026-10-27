@@ -1,6 +1,9 @@
 package com.cardenaspiero255.gamehubultra.platform.gpu
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
+import android.provider.Settings
 import androidx.test.core.app.ApplicationProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -55,5 +58,41 @@ class AndroidGraphicsDriverPreferencesTest {
         }
         assertEquals(DriverPreferenceStatus.UNVERIFIABLE, status.status)
         AndroidGraphicsDriverPreferences.save(context, name, OpenGlDriverPreference.SYSTEM)
+    }
+    @Test fun frameworkReadbackWithoutOverrideReportsSystemFallback() {
+        val name = "com.example.systemdriver"
+        AndroidGraphicsDriverPreferences.save(context, name, OpenGlDriverPreference.SYSTEM)
+        val state = AndroidGraphicsDriverPreferences.inspect(context, name) { null }
+        assertEquals(DriverPreferenceStatus.SYSTEM_DEFAULT, state.status)
+        assertTrue(state.matchesPreference)
+        assertFalse(state.driverLoadedVerified)
+    }
+
+    @Test fun openingDeveloperSettingsUsesOnlyOfficialIntent() {
+        var started: Intent? = null
+        val wrapper = object : ContextWrapper(context) {
+            override fun startActivity(intent: Intent) {
+                started = intent
+            }
+        }
+        assertTrue(AndroidGraphicsDriverPreferences.openSystemDeveloperOptions(wrapper))
+        assertEquals(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, started?.action)
+        assertTrue(started!!.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+    }
+
+    @Test fun developerOptionsNotExportedFailsWithoutCrashing() {
+        val unavailable = object : ContextWrapper(context) {
+            override fun startActivity(intent: Intent) {
+                throw SecurityException("developer options denied")
+            }
+        }
+        assertFalse(AndroidGraphicsDriverPreferences.openSystemDeveloperOptions(unavailable))
+    }
+
+    @Test fun invalidPackageReadbackIsNeverTrusted() {
+        val state = AndroidGraphicsDriverPreferences.inspect(context, "../../other") {
+            error("unexpected read")
+        }
+        assertEquals(DriverPreferenceStatus.UNVERIFIABLE, state.status)
     }
 }
