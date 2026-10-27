@@ -484,6 +484,9 @@ internal fun LibraryScreen(
                             onAssistant = onOpenAssistant
                         )
                     }
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        DriverPreferenceCard(packageName = game.packageName)
+                    }
                 }
 
                 if (selectedGamePackage != null && !selectedGameExists) {
