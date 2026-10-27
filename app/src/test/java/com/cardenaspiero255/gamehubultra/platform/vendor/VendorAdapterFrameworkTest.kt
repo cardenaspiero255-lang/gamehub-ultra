@@ -15,14 +15,14 @@ class VendorAdapterFrameworkTest {
     ) = VendorHardwareObservation(socMaker, socModel, deviceMaker, renderer)
 
     private fun adapter(
-        family: VendorSocFamily,
+        requestedFamily: VendorSocFamily,
         id: String = "verified-vendor-adapter",
         snapshot: VendorReadOnlySnapshot? = VendorReadOnlySnapshot(
             publicAndroidEvidence = true,
             capabilities = setOf(VendorReadOnlyCapability.THERMAL_STATUS)
         )
     ): VendorOptionalAdapter = object : VendorOptionalAdapter {
-        override val family = family
+        override val family = requestedFamily
         override val adapterId = id
         override fun readOnlyCapabilities() = snapshot
     }
