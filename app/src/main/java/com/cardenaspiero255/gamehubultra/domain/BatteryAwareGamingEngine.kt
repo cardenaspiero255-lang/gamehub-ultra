@@ -9,7 +9,7 @@ data class BatteryAwareGamingPolicy(
     init {
         require(criticalBatteryPercent in 0..100)
         require(constrainedBatteryPercent in criticalBatteryPercent..100)
-        require(highDrainPercentPerHour > 0f)
+        require(highDrainPercentPerHour.isFinite() && highDrainPercentPerHour > 0f)
         require(minimumDrainWindowMillis > 0L)
     }
 }

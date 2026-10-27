@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: sonar-${{ github.ref }}
@@ -15,8 +16,10 @@ concurrency:
 
 jobs:
   sonar:
+    # Only trusted main pushes or explicit main dispatches can use SONAR_TOKEN.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       SONAR_PROJECT_KEY_OVERRIDE: ${{ vars.SONAR_PROJECT_KEY }}
       SONAR_ORGANIZATION_OVERRIDE: ${{ vars.SONAR_ORGANIZATION }}
@@ -30,6 +33,13 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify trusted main commit for scanning
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Verify Sonar token is configured
         env:
@@ -259,6 +269,17 @@ jobs:
           )
           PY
 
+      - name: Locate exact successful main Coverage run
+        id: coverage
+        if: steps.discover.outputs.found == 'true'
+        env:
+          GH_COVERAGE_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s .github/scripts -p "test_find_sonar_coverage_run.py" -v
+          python3 .github/scripts/find_sonar_coverage_run.py
+
       - name: Set up JDK 17
         if: steps.discover.outputs.found == 'true'
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -286,6 +307,24 @@ jobs:
         if: steps.discover.outputs.found == 'true'
         run: gradle :app:compileDebugKotlin --stacktrace
 
+      - name: Download JaCoCo report from the exact successful coverage run
+        if: steps.discover.outputs.found == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gamehub-ultra-coverage-report
+          path: app/build/reports/coverage/test/debug
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.coverage.outputs.run_id }}
+
+      - name: Validate JaCoCo report before scanner import
+        if: steps.discover.outputs.found == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s .github/scripts -p "test_verify_sonar_jacoco.py" -v
+          python3 .github/scripts/verify_sonar_jacoco.py \
+            --report app/build/reports/coverage/test/debug/report.xml
+
       - name: Run SonarQube Cloud analysis
         if: steps.discover.outputs.found == 'true'
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6
@@ -299,4 +338,6 @@ jobs:
             -Dsonar.sources=app/src/main
             -Dsonar.tests=app/src/test
             -Dsonar.java.binaries=app/build/tmp/kotlin-classes/debug
+            -Dsonar.coverage.jacoco.xmlReportPaths=app/build/reports/coverage/test/debug/report.xml
+            -Dsonar.qualitygate.wait=true
             -Dsonar.exclusions=**/build/**,**/*.b64

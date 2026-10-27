@@ -134,6 +134,19 @@ class BatteryAwareGamingEngineTest {
     }
 
     @Test
+    fun `policy rejects non-finite high drain thresholds that disable safety recommendations`() {
+        for (invalid in listOf(Float.POSITIVE_INFINITY, Float.NaN, Float.NEGATIVE_INFINITY)) {
+            var rejected = false
+            try {
+                BatteryAwareGamingPolicy(highDrainPercentPerHour = invalid)
+            } catch (_: IllegalArgumentException) {
+                rejected = true
+            }
+            assertTrue(rejected, "Must reject non-finite high drain threshold: $invalid")
+        }
+    }
+
+    @Test
     fun `policy rejects invalid thresholds`() {
         var failed = false
         try {
