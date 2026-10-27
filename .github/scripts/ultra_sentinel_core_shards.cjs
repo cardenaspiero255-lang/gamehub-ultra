@@ -28,10 +28,11 @@ const MINIMUM=500000;
 // A PR must never attest fewer real baseline tests just because 500k matrix cases pass.
 // Baseline b1 counts all registered tests, including 12 prior round-six regressions
 // and 11 genuine post-CI state transition regressions added by PR #217.
-// CI proved b1 executes 11,813 with zero failing/skipped tests; do not lower
-// the threshold or replace the exact-accounting rule with a minimum-only gate.
+// CI on PR #251 (run #40432526993, shard b1) proved 11,821 registrations:
+// the 11,813 prior tests plus 8 exact-PR247 manual-auth adversarial tests.
+// Do not lower the count or replace exact accounting with a minimum-only gate.
 const BASELINE_B0_TESTS=10242;
-const BASELINE_B1_TESTS=11813;
+const BASELINE_B1_TESTS=11821;
 const BASELINE_TEST_COUNTS=Object.freeze({b0:BASELINE_B0_TESTS,b1:BASELINE_B1_TESTS});
 
 function testFiles(root=ROOT){
