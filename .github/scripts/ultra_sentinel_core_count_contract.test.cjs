@@ -29,7 +29,10 @@ test('Core gate requires 150k executed checks across exactly 15 independent shar
  const pr247AuthTests=fs.readFileSync(path.resolve(__dirname,
   'ultra_sentinel_pr247_auth.test.cjs'),'utf8');
  assert.equal((pr247AuthTests.match(/^test\(/gm)||[]).length,8);
- assert.equal(shards.BASELINE_B1_TESTS,11802+11+8);
+ const ownerConsentTests=fs.readFileSync(path.resolve(__dirname,
+  'ultra_sentinel_pr247_owner_consent.test.cjs'),'utf8');
+ assert.equal((ownerConsentTests.match(/^test\(/gm)||[]).length,6);
+ assert.equal(shards.BASELINE_B1_TESTS,11802+11+8+6);
  assert.match(workflow,/\.github\/sentinel-fixtures\/\*\*/);
  const selfReview=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-self-review.yml'),'utf8');
  assert.equal(selfReview.split(".github/sentinel-fixtures/**").length-1,2);
