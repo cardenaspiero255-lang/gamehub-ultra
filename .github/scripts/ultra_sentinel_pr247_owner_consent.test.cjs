@@ -64,6 +64,13 @@ test('latest failed or pending manual attempt supersedes prior green proof',()=>
   assert.equal(judge(d).status,'INCOMPLETE');
  }
 });
+test('a historical retry must not poison a newer owner dispatch on its first attempt',()=>{
+ const d=fixture();
+ const prior={...goodRun(),id:9009,run_attempt:2,run_started_at:'2026-10-26T23:29:00Z'};
+ d.runs.workflow_runs.push(prior);
+ d.runs.total_count=2;
+ assert.equal(judge(d).status,'AUTHENTICATED_OWNER_CONSENT_PR247');
+});
 test('run and GitHub job identity require exact successful unique provenance',()=>{
  for(const change of [
   d=>d.jobs.total_count=2,
