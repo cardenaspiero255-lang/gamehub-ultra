@@ -22,3 +22,24 @@ jobs:
           persist-credentials: false
       - name: Run exact SHA and human review adversarial suite
         run: node --test .github/scripts/ultra_sentinel_pr247_auth.test.cjs
+
+      - name: Test exact full-source JS context with the Sentinel parser
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node <<'NODE'
+          const fs=require('node:fs');
+          const acorn=require('acorn');
+          const {findCapabilities}=require('./.github/scripts/ultra_sentinel_capabilities.cjs');
+          const path='.github/scripts/ultra_sentinel_pr247_auth.cjs';
+          const text=fs.readFileSync(path,'utf8');
+          try {
+            const ast=acorn.parse(text,{ecmaVersion:'latest',sourceType:'script',
+              allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+              locations:true,ranges:true});
+            const sinks=findCapabilities(ast);
+            console.log('Full-source AST parsed; candidate sink count:',sinks.length);
+          }catch(error){
+            console.error('Full-source analysis failed:',error.message);
+            process.exitCode=1;
+          }
+          NODE
