@@ -117,5 +117,18 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        print("CAR-29 OWNER CONSENT INCOMPLETE: " + type(exc).__name__, file=sys.stderr)
+        # Log only a fixed, safe validation reason; never print event inputs,
+        # API bodies, tokens, or any arbitrary exception message.
+        reasons = {
+            "Authenticated owner and main context required",
+            "Exact PR247 SHA required",
+            "Exact manual owner confirmation required",
+            "Invalid GitHub default branch SHA",
+            "Main changed before receipt",
+            "PR247 identity, SHA or 5 blobs changed",
+            "Unexpected Sonar workflow content",
+            "GitHub SHA changed during authorization",
+        }
+        reason = str(exc) if isinstance(exc, ValueError) and str(exc) in reasons else type(exc).__name__
+        print("CAR-29 OWNER CONSENT INCOMPLETE: " + reason, file=sys.stderr)
         raise SystemExit(1)
