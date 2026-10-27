@@ -1,7 +1,11 @@
 package com.cardenaspiero255.gamehubultra.ui.library
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
 import android.provider.Settings
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -113,5 +117,31 @@ class DriverPreferenceCardTest {
         composeRule.onNodeWithText("Abrir opciones de desarrollador").assertIsDisplayed()
         // Read-only confirmation; no Settings.Global write is performed here.
         composeRule.onNodeWithText("Sistema").assertIsDisplayed()
+    }
+
+    @Test fun blockedDeveloperOptionsAreExplainedWithoutCrashing() {
+        val blocked = object : ContextWrapper(context) {
+            override fun startActivity(intent: Intent) {
+                throw SecurityException("Settings activity unavailable")
+            }
+        }
+        composeRule.setContent {
+            CompositionLocalProvider(LocalContext provides blocked) {
+                DriverPreferenceCard(packageName)
+            }
+        }
+        composeRule.onNodeWithText("Abrir opciones de desarrollador").performClick()
+        composeRule.onNodeWithText(
+            "Este dispositivo no permite abrir esas opciones desde GameHub."
+        ).assertIsDisplayed()
+    }
+
+    @Test fun developerOptionsButtonLeavesSavedPreferenceUnchanged() {
+        composeRule.setContent { DriverPreferenceCard(packageName) }
+        composeRule.onNodeWithText("Abrir opciones de desarrollador").performClick()
+        composeRule.runOnIdle {
+            assertEquals(OpenGlDriverPreference.SYSTEM,
+                AndroidGraphicsDriverPreferences.selected(context, packageName))
+        }
     }
 }
