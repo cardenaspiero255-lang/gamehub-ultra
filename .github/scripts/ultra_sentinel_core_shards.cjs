@@ -32,7 +32,7 @@ const MINIMUM=500000;
 // the 11,813 prior tests plus 8 PR247 authorization and 6 owner-consent tests.
 // Do not lower the count or replace exact accounting with a minimum-only gate.
 const BASELINE_B0_TESTS=10242;
-const BASELINE_B1_TESTS=11827;
+const BASELINE_B1_TESTS=11828;
 const BASELINE_TEST_COUNTS=Object.freeze({b0:BASELINE_B0_TESTS,b1:BASELINE_B1_TESTS});
 
 function testFiles(root=ROOT){

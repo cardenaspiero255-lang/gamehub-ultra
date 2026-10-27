@@ -20,7 +20,8 @@ const incomplete=()=>Object.freeze({
  independentReviewVerified:false,autoApproveAllowed:false,autoMergeAllowed:false
 });
 function startTime(r){
- if(!Number.isSafeInteger(r?.id)||r.id<1||r.run_attempt!==1||
+ if(!Number.isSafeInteger(r?.id)||r.id<1||
+    !Number.isSafeInteger(r.run_attempt)||r.run_attempt<1||
     typeof r.run_started_at!=='string'||!/^20\d\d-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(r.run_started_at))
   return null;
  const t=Date.parse(r.run_started_at);
@@ -49,7 +50,8 @@ function selectAuthenticatedOwnerRun({runs,workflow,mainSha,headSha,jobs}={}){
     workflow.name!==NAME||workflow.path!==PATH||workflow.state!=='active')
   return incompleteReceipt;
  const latest=latestRun(runs);
- if(!latest||latest.workflow_id!==workflow.id||latest.name!==NAME||
+ if(!latest||latest.run_attempt!==1||
+    latest.workflow_id!==workflow.id||latest.name!==NAME||
     latest.path!==PATH+'@main'||
     latest.display_title!=='CAR29-PR247-owner-'+headSha||
     latest.event!=='workflow_dispatch'||latest.head_branch!=='main'||
