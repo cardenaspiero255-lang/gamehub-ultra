@@ -720,7 +720,7 @@ val key = prefix +
     def test_interface_abstract_properties_are_not_false_unmapped_coverage(self) -> None:
         report = ET.fromstring(
             '<report><package name="com/example"><sourcefile name="Vendor.kt">'
-            '<line nr="5" mi="0" ci="1"/></sourcefile></package></report>'
+            '<line nr="6" mi="0" ci="1"/></sourcefile></package></report>'
         )
         source = """interface VendorOptionalAdapter {
     val family: VendorSocFamily
@@ -743,7 +743,7 @@ val decision = evaluateVendor()
             '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
         )
         path = "app/src/main/java/com/example/Vendor.kt"
-        source = "val observed = getObserved()\\nval dangerous: Boolean = expensiveCall()\\n"
+        source = "val observed = getObserved()\nval dangerous: Boolean = expensiveCall()\n"
         stats = gate.calculate_patch_line_coverage(
             report, {path: {1, 2}}, {path: source}
         )
