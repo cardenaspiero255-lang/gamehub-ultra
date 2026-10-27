@@ -40,6 +40,15 @@ class AndroidVendorHardwareProbeTest {
         assertEquals(VendorAdapterReason.SOC_UNVERIFIED, result.reason)
     }
 
+    @Test
+    @Config(sdk = [29])
+    fun defaultSocReadoutNeverTouchesApi31OnOldPlatform() {
+        // Even a caller-provided higher SDK value cannot bypass runtime safety.
+        val observation = AndroidVendorHardwareProbe.observe(sdkInt = 35)
+        assertEquals(null, observation.socManufacturer)
+        assertEquals(null, observation.socModel)
+    }
+
     @Test fun productionProbeNeedsNoProprietaryVendorSdk() {
         val report = AndroidVendorHardwareProbe.evaluate()
         assertEquals(VendorAdapterRoute.GENERIC_ANDROID, report.route)

@@ -717,6 +717,39 @@ val key = prefix +
         self.assertFalse(gate.meets_threshold(stats, 90.0))
         self.assertTrue(gate.meets_threshold(gate.PatchCoverage(10, 9), 90.0))
 
+    def test_interface_abstract_properties_are_not_false_unmapped_coverage(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Vendor.kt">'
+            '<line nr="5" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        source = """interface VendorOptionalAdapter {
+    val family: VendorSocFamily
+    val adapterId: String
+    fun readOnlyCapabilities(): VendorReadOnlySnapshot?
+}
+val decision = evaluateVendor()
+"""
+        path = "app/src/main/java/com/example/Vendor.kt"
+        stats = gate.calculate_patch_line_coverage(
+            report, {path: set(range(1, 7))}, {path: source}
+        )
+        self.assertEqual(stats.unmapped_files, ())
+        self.assertEqual((stats.covered, stats.executable), (1, 1))
+        self.assertTrue(gate.meets_threshold(stats, 90.0))
+
+    def test_executable_typed_property_initializer_still_blocks_unmapped_coverage(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Vendor.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        path = "app/src/main/java/com/example/Vendor.kt"
+        source = "val observed = getObserved()\\nval dangerous: Boolean = expensiveCall()\\n"
+        stats = gate.calculate_patch_line_coverage(
+            report, {path: {1, 2}}, {path: source}
+        )
+        self.assertEqual(stats.unmapped_files, (path + ":2",))
+        self.assertFalse(gate.meets_threshold(stats, 90.0))
+
     def test_no_executable_patch_lines_passes(self) -> None:
         stats = gate.PatchCoverage(executable=0, covered=0)
         self.assertTrue(gate.meets_threshold(stats, 90.0))

@@ -108,6 +108,14 @@ def _looks_executable_source_line(line: str) -> bool:
         stripped,
     ):
         return False
+    # Abstract/interface typed properties have no executable JVM instructions.
+    # An initializer (= ...) is never exempted by this rule.
+    if re.fullmatch(
+        r"(?:(?:public|private|protected|internal|abstract|override)\s+)*"
+        r"(?:val|var)\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*[^=]+",
+        stripped,
+    ):
+        return False
     if re.match(
         r"^(?:(?:public|private|protected|internal)\s+)?(?:val|var)\s+"
         r"[A-Za-z_][A-Za-z0-9_]*(?:\s*:\s*[^=]+)?\s*=\s*"
