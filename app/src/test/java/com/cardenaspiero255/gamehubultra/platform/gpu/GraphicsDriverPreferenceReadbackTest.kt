@@ -94,4 +94,48 @@ class GraphicsDriverPreferenceReadbackTest {
         assertEquals(OpenGlDriverPreference.SYSTEM,
             OpenGlDriverPreference.fromStoredValue(null))
     }
+
+    @Test fun whitespaceAroundAndroidTokensIsNotNormalizedIntoFalseConfirmation() {
+        for ((packages, values) in listOf(
+            "com.example.game" to " angle ",
+            " com.example.game" to "angle",
+            "com.example.game " to "angle",
+            "com.other.game,com.example.game" to "native, angle"
+        )) {
+            val result = GraphicsDriverPreferenceReadback.inspect(
+                "com.example.game", OpenGlDriverPreference.ANGLE, packages, values
+            )
+            assertEquals(DriverPreferenceStatus.UNVERIFIABLE, result.status)
+            assertFalse(result.matchesPreference)
+        }
+    }
+
+    @Test fun twoEmptyGlobalSettingsMeanNoPackageOverride() {
+        val system = GraphicsDriverPreferenceReadback.inspect(
+            "com.example.game", OpenGlDriverPreference.SYSTEM, "", ""
+        )
+        assertEquals(DriverPreferenceStatus.SYSTEM_DEFAULT, system.status)
+        assertTrue(system.matchesPreference)
+
+        val alternate = GraphicsDriverPreferenceReadback.inspect(
+            "com.example.game", OpenGlDriverPreference.ANGLE, "", ""
+        )
+        assertEquals(DriverPreferenceStatus.MANUAL_CONFIGURATION_REQUIRED, alternate.status)
+        assertFalse(alternate.matchesPreference)
+    }
+
+    @Test fun partialOrWhitespaceOnlySettingsNeverBecomeConfirmed() {
+        for ((packages, values) in listOf(
+            "" to "angle",
+            "com.example.game" to "",
+            " " to " ",
+            null to "",
+            "" to null
+        )) {
+            val result = GraphicsDriverPreferenceReadback.inspect(
+                "com.example.game", OpenGlDriverPreference.ANGLE, packages, values
+            )
+            assertEquals(DriverPreferenceStatus.UNVERIFIABLE, result.status)
+        }
+    }
 }
