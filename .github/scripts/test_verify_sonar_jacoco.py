@@ -64,5 +64,33 @@ class ReportTests(unittest.TestCase):
             self.check()
 
 
+    def test_rejects_duplicate_line_numbers_even_when_counters_are_adjusted(self):
+        make_report(self.p, covered=3, missed=2)
+        tree = ET.parse(self.p)
+        source = tree.getroot().find("./package/sourcefile")
+        first = source.find("line")
+        source.append(ET.fromstring(ET.tostring(first)))
+        tree.getroot().find("counter").set("covered", "4")
+        tree.write(self.p)
+        with self.assertRaises(ValueError):
+            self.check()
+
+    def test_rejects_nonpositive_line_number_even_if_counts_match(self):
+        make_report(self.p)
+        tree = ET.parse(self.p)
+        tree.getroot().find("./package/sourcefile/line").set("nr", "0")
+        tree.write(self.p)
+        with self.assertRaises(ValueError):
+            self.check()
+
+    def test_rejects_non_numeric_line_number_even_if_counts_match(self):
+        make_report(self.p)
+        tree = ET.parse(self.p)
+        tree.getroot().find("./package/sourcefile/line").set("nr", "NAN")
+        tree.write(self.p)
+        with self.assertRaises(ValueError):
+            self.check()
+
+
 if __name__ == "__main__":
     unittest.main()
