@@ -111,11 +111,14 @@ async function attestScopedPr247({github,owner,repo,pr,files}={}){
   const mainSha=await getMain();
   if(!isExactPr(pr,mainSha)||!exactFiles(files))return incomplete();
   const reviewArgs={owner,repo,pull_number:PR,per_page:100};
-  const [mainBlob,headBlob,reviews]=await Promise.all([
+  const authenticatedEvidence=await Promise.all([
    github.rest.repos.getContent({owner,repo,path:SOURCE,ref:mainSha}),
    github.rest.repos.getContent({owner,repo,path:SOURCE,ref:HEAD}),
    github.paginate(github.rest.pulls.listReviews,reviewArgs)
   ]);
+  const mainBlob=authenticatedEvidence[0];
+  const headBlob=authenticatedEvidence[1];
+  const reviews=authenticatedEvidence[2];
   if(!verifiedBlob(mainBlob.data,BASE_BLOB)||
      !verifiedBlob(headBlob.data,HEAD_BLOB))return incomplete();
   const proof=evaluatePr247({pr,files,reviews,mainSha,
