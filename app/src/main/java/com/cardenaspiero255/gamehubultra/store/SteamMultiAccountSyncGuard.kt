@@ -20,11 +20,13 @@ internal object SteamMultiAccountSyncGuard {
         expectedSteamId: String?,
         authenticatedSteamId: String
     ): SteamSyncAuthorization {
-        if (!GameAccountValidation.isSteamId64(authenticatedSteamId)) {
+        if (authenticatedSteamId != authenticatedSteamId.trim() ||
+            !GameAccountValidation.isSteamId64(authenticatedSteamId)) {
             return SteamSyncAuthorization.INVALID_SESSION
         }
         if (expectedSteamId == null) return SteamSyncAuthorization.NEW_CONNECTION
-        if (!GameAccountValidation.isSteamId64(expectedSteamId)) {
+        if (expectedSteamId != expectedSteamId.trim() ||
+            !GameAccountValidation.isSteamId64(expectedSteamId)) {
             return SteamSyncAuthorization.UNVERIFIABLE_TARGET
         }
         return if (expectedSteamId == authenticatedSteamId) {
