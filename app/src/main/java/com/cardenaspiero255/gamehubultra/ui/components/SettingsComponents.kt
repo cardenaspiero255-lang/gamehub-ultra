@@ -150,7 +150,10 @@ internal fun ConnectedAccountsCard(
                         connectionLauncher.launch(
                             StoreConnectionActivity.newIntent(
                                 context,
-                                account.platform
+                                account.platform,
+                                expectedSteamId = if (account.platform == GamePlatform.STEAM) {
+                                    account.publicId
+                                } else null
                             )
                         )
                     },
