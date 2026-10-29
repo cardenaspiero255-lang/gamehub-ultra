@@ -487,6 +487,9 @@ internal fun LibraryScreen(
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         DriverPreferenceCard(packageName = game.packageName)
                     }
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        CompatibilityDiagnosticsCard(packageName = game.packageName)
+                    }
                 }
 
                 if (selectedGamePackage != null && !selectedGameExists) {
