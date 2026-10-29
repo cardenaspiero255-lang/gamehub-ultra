@@ -13,6 +13,7 @@ import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateReposit
 import com.cardenaspiero255.gamehubultra.data.AiProfileProposalStore
 import com.cardenaspiero255.gamehubultra.data.AppliedAiProfileProposalState
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
+import com.cardenaspiero255.gamehubultra.data.SteamAccountVisibilityPolicy
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import android.os.Build
 import android.os.Trace
@@ -336,6 +337,11 @@ internal fun GameHubUltraApp(
     var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var aiProfileRevision by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
+    val activeStoreAccountId by connectedAccountsRepository.activeAccountIdFlow()
+        .collectAsStateWithLifecycle(initialValue = null)
+    val visibleStoreGames = remember(storeGames, activeStoreAccountId) {
+        SteamAccountVisibilityPolicy.visibleGames(storeGames, activeStoreAccountId)
+    }
     val sessionHistory by viewModel.sessionHistory.collectAsStateWithLifecycle(initialValue = emptyList())
     val aiAdvisor = ultraRuntime.assistant
     val ultraSessionMemory = ultraRuntime.sessionMemory
@@ -968,7 +974,7 @@ internal fun GameHubUltraApp(
                 favoriteGames = favoriteGames,
                 recentGamePackages = recentGamePackages,
                 manualGamePackages = manualGamePackages,
-                storeGames = storeGames,
+                storeGames = visibleStoreGames,
                 gameCatalogRefreshToken = appResumeRefreshToken,
                 onOpenLibrary = {
                     settingsOpen = false
@@ -985,7 +991,7 @@ internal fun GameHubUltraApp(
                 favoriteGames = favoriteGames,
                 recentGamePackages = recentGamePackages,
                 manualGamePackages = manualGamePackages,
-                storeGames = storeGames,
+                storeGames = visibleStoreGames,
                 selectedProfile = uiState.effectiveProfile,
                 runtimeDiagnostics = runtimeDiagnostics,
                 sessionHistory = sessionHistory,
