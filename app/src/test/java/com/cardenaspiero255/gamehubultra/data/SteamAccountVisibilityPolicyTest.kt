@@ -78,9 +78,9 @@ class SteamAccountVisibilityPolicyTest {
         assertEquals(
             SteamAccountSessionState.REAUTHENTICATION_REQUIRED,
             SteamAccountVisibilityPolicy.sessionState(
-                lastSyncedAtMillis = 2_000_000_000L - month - 1,
+                lastSyncedAtMillis = 2_000_000_000_000L - month - 1,
                 hasCachedGames = true,
-                nowMillis = 2_000_000_000L
+                nowMillis = 2_000_000_000_000L
             )
         )
     }
