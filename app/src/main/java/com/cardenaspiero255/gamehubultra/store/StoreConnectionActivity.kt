@@ -41,12 +41,20 @@ class StoreConnectionActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_PLATFORM = "platform"
+        const val EXTRA_EXPECTED_STEAM_ID = "expected_steam_id"
         private const val POLL_MS = 1800L
         private const val MAX_WAIT_MS = 90_000L
 
-        fun newIntent(context: android.content.Context, platform: GamePlatform) =
-            android.content.Intent(context, StoreConnectionActivity::class.java)
-                .putExtra(EXTRA_PLATFORM, platform.name)
+        fun newIntent(
+            context: android.content.Context,
+            platform: GamePlatform,
+            expectedSteamId: String? = null
+        ) = android.content.Intent(context, StoreConnectionActivity::class.java).apply {
+            putExtra(EXTRA_PLATFORM, platform.name)
+            if (platform == GamePlatform.STEAM && expectedSteamId != null) {
+                putExtra(EXTRA_EXPECTED_STEAM_ID, expectedSteamId)
+            }
+        }
     }
 
     private lateinit var webView: WebView
@@ -168,6 +176,25 @@ class StoreConnectionActivity : ComponentActivity() {
 
     private suspend fun syncSteam(result: SteamSyncResult) {
         if (finished) return
+        // A WebView session can outlive the account selected for a SYNC action.
+        // Reject mismatches before changing any persisted account or game cache.
+        when (SteamMultiAccountSyncGuard.authorize(
+            intent.getStringExtra(EXTRA_EXPECTED_STEAM_ID),
+            result.steamId
+        )) {
+            SteamSyncAuthorization.INVALID_SESSION ->
+                return finishWithError("La identidad de la sesión Steam no se pudo verificar")
+            SteamSyncAuthorization.UNVERIFIABLE_TARGET ->
+                return finishWithError(
+                    "Esta cuenta no tiene un SteamID64 verificable. Vuelve a conectar Steam"
+                )
+            SteamSyncAuthorization.ACCOUNT_MISMATCH ->
+                return finishWithError(
+                    "La sesión Steam pertenece a otra cuenta. Inicia sesión con la seleccionada"
+                )
+            SteamSyncAuthorization.NEW_CONNECTION,
+            SteamSyncAuthorization.MATCHED_ACCOUNT -> Unit
+        }
         val account = accountsRepository.upsert(
             GamePlatform.STEAM,
             result.displayName.ifBlank { "Steam" },

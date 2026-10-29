@@ -87,7 +87,7 @@ internal fun StoreLibrarySection(games: List<StoreLibraryGame>) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1
                             )
-                            Text("CONECTADO", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Text("CACHÉ LOCAL · SESIÓN NO VERIFICADA", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -100,5 +100,5 @@ internal fun storeLibrarySummaryText(gameCount: Int): String =
     if (gameCount <= 0) {
         "Conecta Steam o Epic para sincronizar tus juegos dentro de Ultra."
     } else {
-        "Steam + Epic sincronizados · $gameCount juego(s)"
+        "Steam + Epic en caché · $gameCount juego(s)"
     }
