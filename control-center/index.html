@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#090a0d">
+  <meta name="description" content="Estado en tiempo real de GameHub Ultra: PR, GitHub Actions, APK y errores.">
+  <title>GameHub Ultra · Control Center</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#contenido">Saltar al contenido</a>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Navegación">
+      <a class="brand" href="#inicio" aria-label="GameHub Ultra, inicio">
+        <span class="brand-logo" aria-hidden="true">U<span class="logo-slash">/</span></span>
+        <span class="brand-name"><strong>GAMEHUB</strong><em>ULTRA CONTROL</em></span>
+      </a>
+      <div class="nav-label">CENTRO DE MANDO</div>
+      <nav class="side-nav">
+        <a class="active" href="#inicio"><span aria-hidden="true">◈</span> Resumen</a>
+        <a href="#pull-requests"><span aria-hidden="true">⑂</span> Pull requests</a>
+        <a href="#workflows"><span aria-hidden="true">▥</span> Compilaciones</a>
+        <a href="#errores"><span aria-hidden="true">◇</span> Errores</a>
+        <a href="#descargas"><span aria-hidden="true">⇩</span> APK</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-divider"></div>
+        <div class="micro-label">REPOSITORIO VINCULADO</div>
+        <a class="repo-link" href="https://github.com/cardenaspiero255-lang/gamehub-ultra" target="_blank" rel="noopener noreferrer">cardenaspiero255-lang/<strong>gamehub-ultra</strong><span aria-hidden="true">↗</span></a>
+        <div class="sidebar-caption">Datos reales de GitHub, sin métricas inventadas.</div>
+      </div>
+    </aside>
+
+    <main id="contenido" class="main">
+      <header class="topbar">
+        <div class="crumbs"><span>GAMEHUB ULTRA</span><span class="chevron">/</span><strong>Control Center</strong></div>
+        <div class="top-actions">
+          <span class="connection" id="connection"><span class="connection-dot"></span><span id="connection-text">Conectando…</span></span>
+          <button id="refresh" class="refresh-btn" type="button" aria-label="Actualizar estado de GitHub"><span aria-hidden="true">↻</span> Actualizar</button>
+        </div>
+      </header>
+
+      <section id="inicio" class="hero" aria-labelledby="hero-title">
+        <div class="hero-text">
+          <span class="eyebrow"><span class="eyebrow-line"></span> GAMEHUB ULTRA / COMMAND CENTER <span class="version">V1.0</span></span>
+          <h1 id="hero-title">Todo tu proyecto.<br><span>Un solo lugar.</span></h1>
+          <p>Monitorea compilaciones, sigue cada PR y encuentra las últimas APK. Información de GitHub actualizada al instante que la solicites.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#workflows">Ver compilaciones <span aria-hidden="true">↗</span></a>
+            <a class="btn btn-outline" href="https://github.com/cardenaspiero255-lang/gamehub-ultra/pulls" target="_blank" rel="noopener noreferrer">Abrir GitHub <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+        <div class="hero-graphic" aria-hidden="true"><div class="ring ring-a"></div><div class="ring ring-b"></div><div class="ring ring-c"></div><div class="hero-letter">U</div><span class="orbit-star orbit-a">✦</span><span class="orbit-star orbit-b">✧</span></div>
+      </section>
+
+      <div id="status-message" class="status-message" role="status" aria-live="polite" hidden></div>
+
+      <section class="metrics" aria-label="Indicadores">
+        <article class="metric"><div class="metric-top"><span>PR ABIERTOS</span><span class="metric-symbol">⑂</span></div><div id="metric-prs" class="metric-value" aria-live="polite">—</div><p id="metric-prs-note">Consultando GitHub</p></article>
+        <article class="metric"><div class="metric-top"><span>WORKFLOWS RECIENTES</span><span class="metric-symbol">▥</span></div><div id="metric-runs" class="metric-value" aria-live="polite">—</div><p>Últimas ejecuciones consultadas</p></article>
+        <article class="metric"><div class="metric-top"><span>FALLOS REGISTRADOS</span><span class="metric-symbol metric-alert">◇</span></div><div id="metric-failures" class="metric-value" aria-live="polite">—</div><p>Últimas ejecuciones fallidas</p></article>
+        <article class="metric"><div class="metric-top"><span>APK DISPONIBLES</span><span class="metric-symbol">⇩</span></div><div id="metric-apks" class="metric-value" aria-live="polite">—</div><p>Releases o artefactos CI</p></article>
+      </section>
+
+      <div class="content-grid">
+        <section id="pull-requests" class="panel" aria-labelledby="prs-title">
+          <div class="panel-header"><div><span class="micro-label">DESARROLLO</span><h2 id="prs-title">Pull Requests</h2></div><a class="panel-more" href="https://github.com/cardenaspiero255-lang/gamehub-ultra/pulls" target="_blank" rel="noopener noreferrer">Ver todos ↗</a></div>
+          <div id="pr-list" class="item-list"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+        </section>
+        <section id="errores" class="panel" aria-labelledby="errors-title">
+          <div class="panel-header"><div><span class="micro-label">DIAGNÓSTICO</span><h2 id="errors-title">Errores de Sentry</h2></div><a class="panel-more" href="https://sentry.io/" target="_blank" rel="noopener noreferrer">Abrir Sentry ↗</a></div>
+          <div id="sentry-body" class="sentry-body"><p class="empty">Comprobando conexión privada con Sentry…</p></div>
+          <form id="sentry-form" class="sentry-form" hidden>
+            <label for="sentry-key">Clave de acceso privado</label>
+            <div class="sentry-inputs"><input id="sentry-key" type="password" autocomplete="off" minlength="8" placeholder="Clave del panel" required><button type="submit" class="btn btn-primary">Desbloquear</button></div>
+            <p>La clave se utiliza solo para esta consulta y no se guarda en el navegador.</p>
+          </form>
+        </section>
+      </div>
+
+      <section id="workflows" class="panel wide" aria-labelledby="runs-title">
+        <div class="panel-header panel-header-flex"><div><span class="micro-label">INTEGRACIÓN CONTINUA</span><h2 id="runs-title">Compilaciones y pruebas</h2></div><div class="segmented" aria-label="Filtro de ejecuciones"><button id="filter-all" class="selected" type="button" aria-pressed="true">Recientes</button><button id="filter-failed" type="button" aria-pressed="false">Fallidas</button></div></div>
+        <div class="runs-head" aria-hidden="true"><span>WORKFLOW</span><span>RAMA</span><span>RESULTADO</span><span>FECHA</span></div>
+        <div id="run-list" class="runs-list"><div class="skeleton"></div><div class="skeleton"></div></div>
+      </section>
+
+      <section id="descargas" class="panel wide download-panel" aria-labelledby="download-title">
+        <div class="panel-header"><div><span class="micro-label">DISTRIBUCIÓN</span><h2 id="download-title">Descargas APK</h2></div><a class="panel-more" href="https://github.com/cardenaspiero255-lang/gamehub-ultra/releases" target="_blank" rel="noopener noreferrer">Todas las releases ↗</a></div>
+        <div id="apk-list" class="download-list"><p class="empty">Buscando APK publicadas y artefactos de GitHub Actions…</p></div>
+      </section>
+
+      <footer class="footer"><span><span class="footer-square"></span> GAMEHUB ULTRA · CONTROL CENTER</span><span id="last-update">Sin sincronizar</span><span>Operado con datos de GitHub y Sentry</span></footer>
+    </main>
+  </div>
+</body>
+</html>
