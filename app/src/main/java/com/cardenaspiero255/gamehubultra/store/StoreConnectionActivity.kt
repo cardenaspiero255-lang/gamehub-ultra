@@ -237,45 +237,18 @@ class StoreConnectionActivity : ComponentActivity() {
                 val credentials = withContext(Dispatchers.IO) {
                     EpicStoreClient.exchangeCode(code)
                 }
-                // Fail closed before touching account metadata or locally cached games.
-                when (EpicIntegrationPolicy.authorizeAccount(
-                    intent.getStringExtra(EXTRA_EXPECTED_EPIC_ID),
-                    credentials.accountId
-                )) {
-                    EpicAccountAuthorization.INVALID_SESSION ->
-                        error("Epic authenticated account ID is invalid")
-                    EpicAccountAuthorization.UNVERIFIABLE_TARGET ->
-                        error("Epic target account ID is unverifiable")
-                    EpicAccountAuthorization.ACCOUNT_MISMATCH ->
-                        error("Epic session does not match selected account")
-                    EpicAccountAuthorization.NEW_CONNECTION,
-                    EpicAccountAuthorization.MATCHED_ACCOUNT -> Unit
-                }
-                // A network or permission failure must not create an empty account
-                // or erase the last locally cached library.
-                val imported = withContext(Dispatchers.IO) {
-                    EpicStoreClient.fetchLibrary(credentials.accessToken)
-                }
-                val account = withContext(Dispatchers.IO) {
-                    accountsRepository.upsert(
-                        GamePlatform.EPIC_GAMES,
-                        credentials.displayName.ifBlank { "Epic Games" },
-                        credentials.accountId
+                val importedCount = withContext(Dispatchers.IO) {
+                    EpicLibrarySyncCoordinator(
+                        accounts = accountsRepository,
+                        library = storeLibraryRepository,
+                        fetchLibrary = { token -> EpicStoreClient.fetchLibrary(token) }
+                    ).sync(
+                        credentials,
+                        intent.getStringExtra(EXTRA_EXPECTED_EPIC_ID)
                     )
                 }
-                val games = imported.map {
-                    StoreLibraryGame(
-                        id = "epic:" + account.id + ":" + it.appName,
-                        accountId = account.id,
-                        platform = GamePlatform.EPIC_GAMES,
-                        title = it.title,
-                        platformGameId = it.appName,
-                        artworkUrl = it.artworkUrl
-                    )
-                }
-                storeLibraryRepository.replaceForAccount(account.id, games)
                 finishSuccess(
-                    "Epic Games conectado · " + games.size + " juegos sincronizados"
+                    "Epic Games conectado · " + importedCount + " juegos sincronizados"
                 )
             }.onFailure {
                 finished = false
@@ -313,23 +286,15 @@ internal data class SteamSyncResult(
     val games: List<SteamGameResult>
 )
 
-private data class EpicCredentials(
+internal data class EpicCredentials(
     val accessToken: String,
     val refreshToken: String,
     val accountId: String,
     val displayName: String,
     val expiresAt: Long
-) {
-    fun asJson(): String = JSONObject()
-        .put("accessToken", accessToken)
-        .put("refreshToken", refreshToken)
-        .put("accountId", accountId)
-        .put("displayName", displayName)
-        .put("expiresAt", expiresAt)
-        .toString()
-}
+)
 
-private data class EpicLibraryGame(
+internal data class EpicLibraryGame(
     val appName: String,
     val title: String,
     val artworkUrl: String
