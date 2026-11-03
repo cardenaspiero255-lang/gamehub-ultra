@@ -177,6 +177,49 @@ class EpicLibrarySyncCoordinatorTest {
         )
     }
 
+    @Test fun expiredEpicSessionIsRejectedBeforeAnyRemoteRequestOrCacheMutation() = runBlocking {
+        val accounts = Accounts()
+        val library = Library()
+        val old = StoreLibraryGame(
+            id = "epic:$accountA:cached", accountId = accountA,
+            platform = GamePlatform.EPIC_GAMES, title = "Cached",
+            platformGameId = "cached", artworkUrl = ""
+        )
+        library.games += old
+        var fetches = 0
+        val coordinator = EpicLibrarySyncCoordinator(accounts, library) {
+            fetches++
+            emptyList()
+        }
+        assertFailsWith<IllegalArgumentException> {
+            coordinator.sync(credentials(accountA).copy(expiresAt = 0L), accountA)
+        }
+        assertEquals(0, fetches)
+        assertEquals(0, accounts.writes)
+        assertEquals(0, library.writes)
+        assertEquals(listOf(old), library.getAll())
+    }
+
+    @Test fun successfulEmptyAuthorizedEpicLibraryClearsOnlySelectedAccountsCache() = runBlocking {
+        val accounts = Accounts()
+        val library = Library()
+        val target = StoreLibraryGame(
+            id = "epic:$accountA:old", accountId = accountA,
+            platform = GamePlatform.EPIC_GAMES, title = "Old",
+            platformGameId = "old", artworkUrl = ""
+        )
+        val unrelated = target.copy(
+            id = "epic:$accountB:other", accountId = accountB, platformGameId = "other"
+        )
+        library.games += target
+        library.games += unrelated
+        val coordinator = EpicLibrarySyncCoordinator(accounts, library) { emptyList() }
+
+        assertEquals(0, coordinator.sync(credentials(accountA), accountA))
+        assertEquals(listOf(unrelated), library.getAll())
+        assertEquals(1, library.writes)
+    }
+
     @Test fun emptyBearerTokenIsNotSentToMetadataEndpoint() = runBlocking {
         val accounts = Accounts()
         val library = Library()
