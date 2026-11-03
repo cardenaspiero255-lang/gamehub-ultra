@@ -101,31 +101,26 @@ class StoreConnectionActivity : ComponentActivity() {
                 )
             }
             GamePlatform.EPIC_GAMES -> {
-                runCatching {
-                    EpicAuthSecurity.requireSecureBackendUrl(
-                        BuildConfig.EPIC_AUTH_BACKEND_URL
-                    )
-                }.onFailure {
-                    return finishWithError(
-                        "Epic requiere un backend HTTPS seguro para iniciar sesión"
-                    )
-                }
-
                 val stateBytes = ByteArray(32).also {
                     java.security.SecureRandom().nextBytes(it)
                 }
                 val state = stateBytes.joinToString("") { "%02x".format(it) }
+                val authorizationUrl = runCatching {
+                    EpicAuthSecurity.requireSecureBackendUrl(
+                        BuildConfig.EPIC_AUTH_BACKEND_URL
+                    )
+                    EpicIntegrationPolicy.authorizationUrl(
+                        BuildConfig.EPIC_OAUTH_CLIENT_ID,
+                        BuildConfig.EPIC_OAUTH_REDIRECT_URI,
+                        state
+                    )
+                }.getOrElse {
+                    return finishWithError(
+                        "Epic requiere un cliente OAuth, redirect HTTPS registrado y backend seguro"
+                    )
+                }
                 epicState = state
-                val redirect = Uri.encode(
-                    EpicConstants.REDIRECT_URI +
-                        "?clientId=" + EpicConstants.CLIENT_ID +
-                        "&responseType=code"
-                )
-                webView.loadUrl(
-                    EpicConstants.AUTH_BASE_URL + "/id/login" +
-                        "?redirectUrl=" + redirect +
-                        "&state=" + Uri.encode(state)
-                )
+                webView.loadUrl(authorizationUrl)
             }
         }
     }
@@ -143,8 +138,13 @@ class StoreConnectionActivity : ComponentActivity() {
             view: WebView,
             request: WebResourceRequest
         ): Boolean {
-            if (platform == GamePlatform.EPIC_GAMES) {
+            if (platform == GamePlatform.EPIC_GAMES &&
+                EpicIntegrationPolicy.matchesRegisteredRedirect(
+                    request.url.toString(), BuildConfig.EPIC_OAUTH_REDIRECT_URI
+                )
+            ) {
                 handleEpicRedirect(request.url)
+                return true
             }
             return false
         }
@@ -223,7 +223,9 @@ class StoreConnectionActivity : ComponentActivity() {
     private fun handleEpicRedirect(uri: Uri) {
         if (finished) return
         // OAuth only: reject cross-origin, mismatched state and body-scraped codes.
-        val code = EpicIntegrationPolicy.authorizationCode(uri.toString(), epicState)
+        val code = EpicIntegrationPolicy.authorizationCode(
+            uri.toString(), epicState, BuildConfig.EPIC_OAUTH_REDIRECT_URI
+        )
             ?: return
         authenticateEpic(code)
     }
@@ -395,12 +397,7 @@ private object SteamStoreClient {
 }
 
 private object EpicConstants {
-    const val CLIENT_ID = "34a02cf8f4414e29b15921876da36f9a"
-
-    const val AUTH_BASE_URL = "https://www.epicgames.com"
-
     const val LIBRARY_HOST = "library-service.live.use1a.on.epicgames.com"
-    const val REDIRECT_URI = "https://www.epicgames.com/id/api/redirect"
 }
 
 private object EpicStoreClient {
@@ -412,8 +409,8 @@ private object EpicStoreClient {
             backendUrl,
             JSONObject()
                 .put("code", code)
-                .put("clientId", EpicConstants.CLIENT_ID)
-                .put("redirectUri", EpicConstants.REDIRECT_URI)
+                .put("clientId", BuildConfig.EPIC_OAUTH_CLIENT_ID)
+                .put("redirectUri", BuildConfig.EPIC_OAUTH_REDIRECT_URI)
         )
         return EpicCredentials(
             accessToken = json.getString("access_token"),

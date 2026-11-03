@@ -2,8 +2,9 @@ package com.cardenaspiero255.gamehubultra.store
 
 import java.net.URI
 import java.net.URLDecoder
+import java.net.URLEncoder
 
-/** CAR-58: only a verified, exact Epic OAuth callback can authorize a new link. */
+/** CAR-58: only a verified OAuth callback from the registered redirect can authorize Epic. */
 internal enum class EpicAccountAuthorization {
     NEW_CONNECTION,
     MATCHED_ACCOUNT,
@@ -13,26 +14,73 @@ internal enum class EpicAccountAuthorization {
 }
 
 internal object EpicIntegrationPolicy {
-    private const val REDIRECT_HOST = "www.epicgames.com"
-    private const val REDIRECT_PATH = "/id/api/redirect"
+    private const val EPIC_AUTHORIZE_URL = "https://www.epicgames.com/id/authorize"
     private val oauthState = Regex("[0-9a-f]{64}")
+    private val epicClientId = Regex("[0-9a-fA-F]{32}")
     private val epicAccountId = Regex("[0-9a-fA-F]{32}")
+
+    /** A redirect URI must be registered to the app's own OAuth client in Epic Developer Portal. */
+    private fun registeredRedirectUri(raw: String): URI? {
+        val uri = runCatching { URI(raw) }.getOrNull() ?: return null
+        return uri.takeIf {
+            it.scheme.equals("https", ignoreCase = true) &&
+                !it.host.isNullOrBlank() &&
+                it.port == -1 &&
+                it.userInfo == null &&
+                it.rawFragment == null &&
+                it.rawQuery == null &&
+                it.rawPath.startsWith("/") &&
+                it.rawPath.length > 1
+        }
+    }
+
+    /** Official OAuth authorization code flow. No launcher client ID or internal Epic redirect. */
+    fun authorizationUrl(
+        clientId: String,
+        registeredRedirect: String,
+        state: String
+    ): String {
+        require(epicClientId.matches(clientId)) { "Epic OAuth client ID is not configured" }
+        val redirectUri = requireNotNull(registeredRedirectUri(registeredRedirect)) {
+            "Epic OAuth redirect URI must be configured with HTTPS"
+        }
+        require(oauthState.matches(state)) { "Epic OAuth state must be random hexadecimal" }
+        val params = listOf(
+            "client_id" to clientId,
+            "redirect_uri" to redirectUri.toString(),
+            "response_type" to "code",
+            "scope" to "basic_profile",
+            "state" to state
+        )
+        return EPIC_AUTHORIZE_URL + "?" +
+            params.joinToString("&") { (name, value) ->
+                name + "=" + URLEncoder.encode(value, "UTF-8")
+            }
+    }
+
+    fun matchesRegisteredRedirect(callbackUrl: String, registeredRedirect: String): Boolean {
+        val expected = registeredRedirectUri(registeredRedirect) ?: return false
+        val callback = runCatching { URI(callbackUrl) }.getOrNull() ?: return false
+        return callback.scheme.equals(expected.scheme, ignoreCase = true) &&
+            callback.host.equals(expected.host, ignoreCase = true) &&
+            callback.port == expected.port &&
+            callback.rawPath == expected.rawPath &&
+            callback.userInfo == null &&
+            callback.rawFragment == null
+    }
 
     /**
      * Never read authorization codes from arbitrary web page bodies or cookies.
      * Reject ambiguous, repeated or unbound state/code parameters.
      */
-    fun authorizationCode(callbackUrl: String, expectedState: String?): String? {
+    fun authorizationCode(
+        callbackUrl: String,
+        expectedState: String?,
+        registeredRedirect: String
+    ): String? {
         if (expectedState == null || !oauthState.matches(expectedState)) return null
+        if (!matchesRegisteredRedirect(callbackUrl, registeredRedirect)) return null
         val uri = runCatching { URI(callbackUrl) }.getOrNull() ?: return null
-        if (!uri.scheme.equals("https", ignoreCase = true) ||
-            !uri.host.equals(REDIRECT_HOST, ignoreCase = true) ||
-            uri.rawPath != REDIRECT_PATH ||
-            uri.port != -1 ||
-            uri.userInfo != null ||
-            uri.rawFragment != null
-        ) return null
-
         val rawQuery = uri.rawQuery ?: return null
         val params = runCatching {
             rawQuery.split('&').map { entry ->
