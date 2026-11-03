@@ -2,6 +2,11 @@ package com.cardenaspiero255.gamehubultra.ui.components
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import android.app.Activity
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import com.cardenaspiero255.gamehubultra.R
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.runBlocking
 import androidx.activity.compose.LocalActivity
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -26,7 +31,13 @@ class EpicAccountsStatusComposeTest {
     @get:Rule val composeRule = createComposeRule()
     private var hostActivity: Activity? = null
 
-    private fun renderEpicAccount(lastSync: Long?, cached: Boolean) {
+    private data class RenderedAccount(
+        val accounts: ConnectedGameAccountsStateRepository,
+        val library: StoreLibraryStateRepository,
+        val changeEvents: AtomicInteger
+    )
+
+    private fun renderEpicAccount(lastSync: Long?, cached: Boolean): RenderedAccount {
         val account = ConnectedGameAccount(
             id = "epic-ui-id",
             platform = GamePlatform.EPIC_GAMES,
@@ -49,14 +60,16 @@ class EpicAccountsStatusComposeTest {
             )
         ) else emptyList()
         Mockito.`when`(library.getAll()).thenReturn(games)
+        val changeEvents = AtomicInteger(0)
         composeRule.setContent {
             hostActivity = LocalActivity.current
             ConnectedAccountsCard(
                 accountsRepository = accounts,
                 storeLibraryRepository = library,
-                onStoreConnectionChanged = {}
+                onStoreConnectionChanged = { changeEvents.incrementAndGet() }
             )
         }
+        return RenderedAccount(accounts, library, changeEvents)
     }
 
     @Test fun selectedEpicAccountSyncLaunchesBoundActivityWithoutLeakingTokens() {
@@ -71,6 +84,33 @@ class EpicAccountsStatusComposeTest {
         assertEquals(GamePlatform.EPIC_GAMES.name, started.getStringExtra("platform"))
         assertEquals(null, started.getStringExtra("access_token"))
         assertEquals(null, started.getStringExtra("refresh_token"))
+    }
+
+    @Test fun removingEpicAccountDeletesItsAccountScopedCacheAndNotifiesConsumers() {
+        val rendered = renderEpicAccount(lastSync = 1L, cached = true)
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        composeRule.onNodeWithText(context.getString(R.string.remove_game)).performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            rendered.changeEvents.get() == 1
+        }
+        runBlocking {
+            Mockito.verify(rendered.accounts).remove("epic-ui-id")
+        }
+        Mockito.verify(rendered.library).removeForAccount("epic-ui-id")
+        assertEquals(1, rendered.changeEvents.get())
+    }
+
+    @Test fun activatingEpicAccountSelectsOnlyItsOwnIdentifier() {
+        val rendered = renderEpicAccount(lastSync = null, cached = false)
+        composeRule.onNodeWithText("ACTIVA").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            Mockito.mockingDetails(rendered.accounts).invocations.any {
+                it.method.name == "setActiveAccount"
+            }
+        }
+        runBlocking {
+            Mockito.verify(rendered.accounts).setActiveAccount("epic-ui-id")
+        }
     }
 
     @Test fun noEpicCacheRendersDisconnectedState() {
