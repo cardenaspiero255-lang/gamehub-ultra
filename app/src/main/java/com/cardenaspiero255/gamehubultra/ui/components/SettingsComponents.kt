@@ -166,6 +166,9 @@ internal fun ConnectedAccountsCard(
                                 account.platform,
                                 expectedSteamId = if (account.platform == GamePlatform.STEAM) {
                                     account.publicId
+                                } else null,
+                                expectedEpicId = if (account.platform == GamePlatform.EPIC_GAMES) {
+                                    account.publicId
                                 } else null
                             )
                         )

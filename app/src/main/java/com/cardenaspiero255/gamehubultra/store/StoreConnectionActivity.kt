@@ -42,17 +42,22 @@ class StoreConnectionActivity : ComponentActivity() {
     companion object {
         const val EXTRA_PLATFORM = "platform"
         const val EXTRA_EXPECTED_STEAM_ID = "expected_steam_id"
+        const val EXTRA_EXPECTED_EPIC_ID = "expected_epic_id"
         private const val POLL_MS = 1800L
         private const val MAX_WAIT_MS = 90_000L
 
         fun newIntent(
             context: android.content.Context,
             platform: GamePlatform,
-            expectedSteamId: String? = null
+            expectedSteamId: String? = null,
+            expectedEpicId: String? = null
         ) = android.content.Intent(context, StoreConnectionActivity::class.java).apply {
             putExtra(EXTRA_PLATFORM, platform.name)
             if (platform == GamePlatform.STEAM && expectedSteamId != null) {
                 putExtra(EXTRA_EXPECTED_STEAM_ID, expectedSteamId)
+            }
+            if (platform == GamePlatform.EPIC_GAMES && expectedEpicId != null) {
+                putExtra(EXTRA_EXPECTED_EPIC_ID, expectedEpicId)
             }
         }
     }
@@ -217,26 +222,10 @@ class StoreConnectionActivity : ComponentActivity() {
 
     private fun handleEpicRedirect(uri: Uri) {
         if (finished) return
-        val expected = Uri.parse(EpicConstants.REDIRECT_URI)
-        if (!uri.scheme.equals(expected.scheme, true) ||
-            !uri.host.equals(expected.host, true) ||
-            uri.path != expected.path
-        ) return
-        if (uri.getQueryParameter("state") != epicState) return
-
-        val code = uri.getQueryParameter("code")
-        if (!code.isNullOrBlank()) {
-            authenticateEpic(code)
-            return
-        }
-
-        webView.evaluateJavascript(
-            "(function(){try{return JSON.parse(document.body&&document.body.innerText||'{}')" +
-                ".authorizationCode||null}catch(e){return null}})();"
-        ) { jsResult ->
-            val bodyCode = unquoteJsonString(jsResult)
-            if (!bodyCode.isNullOrBlank()) authenticateEpic(bodyCode)
-        }
+        // OAuth only: reject cross-origin, mismatched state and body-scraped codes.
+        val code = EpicIntegrationPolicy.authorizationCode(uri.toString(), epicState)
+            ?: return
+        authenticateEpic(code)
     }
 
     private fun authenticateEpic(code: String) {
@@ -248,6 +237,25 @@ class StoreConnectionActivity : ComponentActivity() {
                 val credentials = withContext(Dispatchers.IO) {
                     EpicStoreClient.exchangeCode(code)
                 }
+                // Fail closed before touching account metadata or locally cached games.
+                when (EpicIntegrationPolicy.authorizeAccount(
+                    intent.getStringExtra(EXTRA_EXPECTED_EPIC_ID),
+                    credentials.accountId
+                )) {
+                    EpicAccountAuthorization.INVALID_SESSION ->
+                        error("Epic authenticated account ID is invalid")
+                    EpicAccountAuthorization.UNVERIFIABLE_TARGET ->
+                        error("Epic target account ID is unverifiable")
+                    EpicAccountAuthorization.ACCOUNT_MISMATCH ->
+                        error("Epic session does not match selected account")
+                    EpicAccountAuthorization.NEW_CONNECTION,
+                    EpicAccountAuthorization.MATCHED_ACCOUNT -> Unit
+                }
+                // A network or permission failure must not create an empty account
+                // or erase the last locally cached library.
+                val imported = withContext(Dispatchers.IO) {
+                    EpicStoreClient.fetchLibrary(credentials.accessToken)
+                }
                 val account = withContext(Dispatchers.IO) {
                     accountsRepository.upsert(
                         GamePlatform.EPIC_GAMES,
@@ -255,9 +263,7 @@ class StoreConnectionActivity : ComponentActivity() {
                         credentials.accountId
                     )
                 }
-                val games = withContext(Dispatchers.IO) {
-                    EpicStoreClient.fetchLibrary(credentials.accessToken)
-                }.map {
+                val games = imported.map {
                     StoreLibraryGame(
                         id = "epic:" + account.id + ":" + it.appName,
                         accountId = account.id,
@@ -274,22 +280,9 @@ class StoreConnectionActivity : ComponentActivity() {
             }.onFailure {
                 finished = false
                 finishWithError(
-                    "Epic no pudo sincronizar la biblioteca: " +
-                        it.message.orEmpty().take(180)
+                    "Epic no pudo verificar o sincronizar esta cuenta; la caché anterior se conserva"
                 )
             }
-        }
-    }
-
-    private fun unquoteJsonString(value: String?): String? {
-        if (value.isNullOrBlank() || value.trim() == "null") return null
-        val raw = value.trim()
-        return if (raw.length >= 2 && raw.first() == '"' && raw.last() == '"') {
-            runCatching {
-                org.json.JSONTokener(raw).nextValue() as? String
-            }.getOrNull()
-        } else {
-            raw
         }
     }
 
