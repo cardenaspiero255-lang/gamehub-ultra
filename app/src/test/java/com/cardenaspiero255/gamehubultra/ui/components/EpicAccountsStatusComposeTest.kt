@@ -2,7 +2,7 @@ package com.cardenaspiero255.gamehubultra.ui.components
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import android.app.Activity
-import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.LocalActivity
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
@@ -50,7 +50,7 @@ class EpicAccountsStatusComposeTest {
         ) else emptyList()
         Mockito.`when`(library.getAll()).thenReturn(games)
         composeRule.setContent {
-            hostActivity = LocalContext.current as? Activity
+            hostActivity = LocalActivity.current
             ConnectedAccountsCard(
                 accountsRepository = accounts,
                 storeLibraryRepository = library,
