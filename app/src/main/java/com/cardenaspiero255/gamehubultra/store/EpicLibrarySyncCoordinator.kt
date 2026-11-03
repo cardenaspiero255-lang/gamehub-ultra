@@ -15,17 +15,17 @@ internal class EpicLibrarySyncCoordinator(
     private val fetchLibrary: suspend (String) -> List<EpicLibraryGame>
 ) {
     suspend fun sync(credentials: EpicCredentials, expectedAccountId: String?): Int {
-        when (EpicIntegrationPolicy.authorizeAccount(
+        val authorization = EpicIntegrationPolicy.authorizeAccount(
             expectedAccountId, credentials.accountId
-        )) {
-            EpicAccountAuthorization.INVALID_SESSION,
-            EpicAccountAuthorization.UNVERIFIABLE_TARGET,
-            EpicAccountAuthorization.ACCOUNT_MISMATCH ->
-                throw IllegalArgumentException("Epic account identity could not be verified")
-            EpicAccountAuthorization.NEW_CONNECTION,
-            EpicAccountAuthorization.MATCHED_ACCOUNT -> Unit
-        }
+        )
+        require(
+            authorization == EpicAccountAuthorization.NEW_CONNECTION ||
+                authorization == EpicAccountAuthorization.MATCHED_ACCOUNT
+        ) { "Epic account identity could not be verified" }
         require(credentials.accessToken.isNotBlank()) { "Missing Epic access token" }
+        require(credentials.expiresAt > System.currentTimeMillis()) {
+            "Epic access token has expired"
+        }
         // Remote failure must leave pre-existing public account/library metadata intact.
         val imported = fetchLibrary(credentials.accessToken)
         val account = accounts.upsert(
