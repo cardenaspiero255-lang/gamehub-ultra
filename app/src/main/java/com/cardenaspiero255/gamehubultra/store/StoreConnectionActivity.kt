@@ -174,14 +174,15 @@ class StoreConnectionActivity : ComponentActivity() {
         }, POLL_MS)
     }
 
-    private suspend fun syncSteam(result: SteamSyncResult) {
+    internal suspend fun syncSteam(result: SteamSyncResult) {
         if (finished) return
         // A WebView session can outlive the account selected for a SYNC action.
         // Reject mismatches before changing any persisted account or game cache.
-        when (SteamMultiAccountSyncGuard.authorize(
+        val authorization = SteamMultiAccountSyncGuard.authorize(
             intent.getStringExtra(EXTRA_EXPECTED_STEAM_ID),
             result.steamId
-        )) {
+        )
+        when (authorization) {
             SteamSyncAuthorization.INVALID_SESSION ->
                 return finishWithError("La identidad de la sesión Steam no se pudo verificar")
             SteamSyncAuthorization.UNVERIFIABLE_TARGET ->
@@ -307,13 +308,13 @@ class StoreConnectionActivity : ComponentActivity() {
     }
 }
 
-private data class SteamGameResult(
+internal data class SteamGameResult(
     val appId: Int,
     val title: String,
     val artworkUrl: String
 )
 
-private data class SteamSyncResult(
+internal data class SteamSyncResult(
     val steamId: String,
     val displayName: String,
     val games: List<SteamGameResult>
