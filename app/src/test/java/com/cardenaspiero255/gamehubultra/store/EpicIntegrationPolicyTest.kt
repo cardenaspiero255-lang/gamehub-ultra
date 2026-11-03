@@ -3,18 +3,29 @@ package com.cardenaspiero255.gamehubultra.store
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertContains
+import kotlin.test.assertFailsWith
 
 /** CAR-58: explicit OAuth redirect boundaries and account-scoped Epic session refresh. */
 class EpicIntegrationPolicyTest {
     private val state = "a".repeat(64)
     private val accountA = "0123456789abcdef0123456789abcdef"
     private val accountB = "fedcba9876543210fedcba9876543210"
-    private val redirect = "https://www.epicgames.com/id/api/redirect"
+    private val redirect = "https://app.gamehub-ultra.example/oauth/epic/callback"
+    private val clientId = "0123456789abcdef0123456789abcdef"
+
+    private fun code(
+        callback: String,
+        expected: String? = state,
+        registeredRedirect: String = redirect
+    ): String? = EpicIntegrationPolicy.authorizationCode(
+        callback, expected, registeredRedirect
+    )
 
     @Test fun exactHttpsRedirectAndMatchingStateAllowsAuthorizationCode() {
         assertEquals(
             "opaque-auth-code",
-            EpicIntegrationPolicy.authorizationCode(
+            code(
                 "$redirect?state=$state&code=opaque-auth-code", state
             )
         )
@@ -23,7 +34,7 @@ class EpicIntegrationPolicyTest {
     @Test fun percentEncodedAuthorizationCodeIsDecodedOnce() {
         assertEquals(
             "safe/callback+code",
-            EpicIntegrationPolicy.authorizationCode(
+            code(
                 "$redirect?code=safe%2Fcallback%2Bcode&state=$state", state
             )
         )
@@ -32,7 +43,7 @@ class EpicIntegrationPolicyTest {
     @Test fun missingOrInvalidExpectedStateFailsClosed() {
         val callback = "$redirect?state=$state&code=token"
         for (expected in listOf(null, "", "not-an-oauth-state", "b".repeat(64))) {
-            assertNull(EpicIntegrationPolicy.authorizationCode(callback, expected))
+            assertNull(code(callback, expected))
         }
     }
 
@@ -43,7 +54,7 @@ class EpicIntegrationPolicyTest {
             "$redirect?state=$state&state=$state&code=token",
             "$redirect?state=$state&state=other&code=token"
         )
-        urls.forEach { assertNull(EpicIntegrationPolicy.authorizationCode(it, state)) }
+        urls.forEach { assertNull(code(it, state)) }
     }
 
     @Test fun duplicatedBlankOrMissingAuthorizationCodeIsRejected() {
@@ -53,21 +64,21 @@ class EpicIntegrationPolicyTest {
             "$redirect?state=$state&code=first&code=second",
             "$redirect?state=$state&code=abc%0Adef"
         )
-        urls.forEach { assertNull(EpicIntegrationPolicy.authorizationCode(it, state)) }
+        urls.forEach { assertNull(code(it, state)) }
     }
 
     @Test fun wrongSchemeHostSubdomainPathOrPortCannotSupplyTokens() {
         val urls = listOf(
-            "http://www.epicgames.com/id/api/redirect",
-            "https://www.epicgames.com.evil.example/id/api/redirect",
-            "https://evil.example/id/api/redirect",
-            "https://www.epicgames.com:444/id/api/redirect",
-            "https://www.epicgames.com/id/api/other",
-            "https://user@www.epicgames.com/id/api/redirect",
-            "https://www.epicgames.com/id/api/redirect/"
+            "http://app.gamehub-ultra.example/oauth/epic/callback",
+            "https://app.gamehub-ultra.example.evil.example/oauth/epic/callback",
+            "https://evil.example/oauth/epic/callback",
+            "https://app.gamehub-ultra.example:444/oauth/epic/callback",
+            "https://app.gamehub-ultra.example/oauth/epic/other",
+            "https://user@app.gamehub-ultra.example/oauth/epic/callback",
+            "https://app.gamehub-ultra.example/oauth/epic/callback/"
         )
         urls.forEach {
-            assertNull(EpicIntegrationPolicy.authorizationCode("$it?state=$state&code=token", state))
+            assertNull(code("$it?state=$state&code=token", state))
         }
     }
 
@@ -78,15 +89,57 @@ class EpicIntegrationPolicyTest {
             "$redirect?state=$state&code=token&code=ignored",
             "$redirect?state=$state&code=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         )
-        urls.forEach { assertNull(EpicIntegrationPolicy.authorizationCode(it, state)) }
+        urls.forEach { assertNull(code(it, state)) }
     }
 
     @Test fun unrelatedBrowserPageOrHtmlBodyNeverGrantsAuthorization() {
-        assertNull(EpicIntegrationPolicy.authorizationCode(
+        assertNull(code(
             "https://www.epicgames.com/id/login?state=$state&code=token", state
         ))
-        assertNull(EpicIntegrationPolicy.authorizationCode(
+        assertNull(code(
             "https://www.epicgames.com/id/api/redirect", state
+        ))
+    }
+
+
+    @Test fun officialAuthorizeUrlUsesConfiguredClientRedirectAndState() {
+        val url = EpicIntegrationPolicy.authorizationUrl(clientId, redirect, state)
+        assertContains(url, "https://www.epicgames.com/id/authorize?")
+        assertContains(url, "client_id=$clientId")
+        assertContains(url, "response_type=code")
+        assertContains(url, "scope=basic_profile")
+        assertContains(url, "state=$state")
+        assertContains(
+            url, "redirect_uri=" + java.net.URLEncoder.encode(redirect, "UTF-8")
+        )
+    }
+
+    @Test fun missingUnregisteredOrInsecureClientConfigurationIsBlocked() {
+        assertFailsWith<IllegalArgumentException> {
+            EpicIntegrationPolicy.authorizationUrl("", redirect, state)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            EpicIntegrationPolicy.authorizationUrl(clientId, "http://example.org/callback", state)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            EpicIntegrationPolicy.authorizationUrl(clientId, "$redirect#fragment", state)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            EpicIntegrationPolicy.authorizationUrl(clientId, redirect, "unbound-state")
+        }
+    }
+
+    @Test fun callbackIsBoundToItsRegisteredRedirectNotAnUnrelatedUrl() {
+        assertNull(code("$redirect?state=$state&code=token", state, "https://other.example/callback"))
+        assertNull(code("$redirect?state=$state&code=token", state, ""))
+    }
+
+    @Test fun onlyTheRegisteredRedirectPathIsInterceptableByWebView() {
+        assertEquals(true, EpicIntegrationPolicy.matchesRegisteredRedirect(
+            "$redirect?state=$state&code=token", redirect
+        ))
+        assertEquals(false, EpicIntegrationPolicy.matchesRegisteredRedirect(
+            "https://www.epicgames.com/id/login", redirect
         ))
     }
 
