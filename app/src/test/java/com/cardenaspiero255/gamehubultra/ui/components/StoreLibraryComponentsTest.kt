@@ -15,7 +15,7 @@ class StoreLibraryComponentsTest {
     @Test
     fun populatedStoreLibraryReportsConnectedGameCount() {
         assertEquals(
-            "Steam + Epic sincronizados · 7 juego(s)",
+            "Steam + Epic en caché · 7 juego(s)",
             storeLibrarySummaryText(7)
         )
     }

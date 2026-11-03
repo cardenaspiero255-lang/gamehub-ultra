@@ -34,6 +34,8 @@ import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
+import com.cardenaspiero255.gamehubultra.data.SteamAccountSessionState
+import com.cardenaspiero255.gamehubultra.data.SteamAccountVisibilityPolicy
 import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
 import com.cardenaspiero255.gamehubultra.platform.GamePlatformLinks
@@ -51,6 +53,10 @@ internal fun ConnectedAccountsCard(
     val store = accountsRepository
     val accounts by store.accountsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
     val activeAccountId by store.activeAccountIdFlow().collectAsStateWithLifecycle(initialValue = null)
+    val cachedSteamAccountIds = remember(accounts) {
+        storeLibraryRepository.getAll().filter { it.platform == GamePlatform.STEAM }
+            .map { it.accountId }.toSet()
+    }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var platformName by rememberSaveable { mutableStateOf(GamePlatform.STEAM.name) }
@@ -136,6 +142,13 @@ internal fun ConnectedAccountsCard(
                 ConnectedAccountRow(
                     account = account,
                     active = account.id == activeAccountId,
+                    steamStatus = if (account.platform == GamePlatform.STEAM) {
+                        SteamAccountVisibilityPolicy.sessionState(
+                            account.lastSyncedAtMillis,
+                            account.id in cachedSteamAccountIds,
+                            System.currentTimeMillis()
+                        )
+                    } else null,
                     onActivate = {
                         scope.launch { store.setActiveAccount(account.id) }
                     },
@@ -150,7 +163,10 @@ internal fun ConnectedAccountsCard(
                         connectionLauncher.launch(
                             StoreConnectionActivity.newIntent(
                                 context,
-                                account.platform
+                                account.platform,
+                                expectedSteamId = if (account.platform == GamePlatform.STEAM) {
+                                    account.publicId
+                                } else null
                             )
                         )
                     },
@@ -270,7 +286,8 @@ internal fun ConnectedAccountRow(
     onActivate: () -> Unit,
     onRemove: () -> Unit,
     onOpen: () -> Unit,
-    onSync: () -> Unit
+    onSync: () -> Unit,
+    steamStatus: SteamAccountSessionState? = null
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -285,6 +302,12 @@ internal fun ConnectedAccountRow(
                         (account.avatarUrl?.let { " · Avatar público configurado" } ?: ""),
                     style = MaterialTheme.typography.bodySmall
                 )
+                if (steamStatus != null) {
+                    Text(
+                        SteamAccountVisibilityPolicy.statusText(steamStatus),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
             TextButton(onClick = onActivate) {
                 Text(if (active) "ACTIVA" else "ACTIVAR")
