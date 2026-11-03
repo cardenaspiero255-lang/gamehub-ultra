@@ -1,24 +1,30 @@
 package com.cardenaspiero255.gamehubultra.ui.components
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import android.app.Activity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
 import kotlinx.coroutines.flow.flowOf
+import kotlin.test.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class EpicAccountsStatusComposeTest {
     @get:Rule val composeRule = createComposeRule()
+    private var hostActivity: Activity? = null
 
     private fun renderEpicAccount(lastSync: Long?, cached: Boolean) {
         val account = ConnectedGameAccount(
@@ -44,12 +50,27 @@ class EpicAccountsStatusComposeTest {
         ) else emptyList()
         Mockito.`when`(library.getAll()).thenReturn(games)
         composeRule.setContent {
+            hostActivity = LocalContext.current as? Activity
             ConnectedAccountsCard(
                 accountsRepository = accounts,
                 storeLibraryRepository = library,
                 onStoreConnectionChanged = {}
             )
         }
+    }
+
+    @Test fun selectedEpicAccountSyncLaunchesBoundActivityWithoutLeakingTokens() {
+        renderEpicAccount(lastSync = null, cached = false)
+        composeRule.onNodeWithText("SYNC").performClick()
+        val host = checkNotNull(hostActivity)
+        val started = checkNotNull(Shadows.shadowOf(host).nextStartedActivity)
+        assertEquals(
+            "0123456789abcdef0123456789abcdef",
+            started.getStringExtra("expected_epic_id")
+        )
+        assertEquals(GamePlatform.EPIC_GAMES.name, started.getStringExtra("platform"))
+        assertEquals(null, started.getStringExtra("access_token"))
+        assertEquals(null, started.getStringExtra("refresh_token"))
     }
 
     @Test fun noEpicCacheRendersDisconnectedState() {
