@@ -92,6 +92,15 @@ class EpicIntegrationPolicyTest {
         urls.forEach { assertNull(code(it, state)) }
     }
 
+    @Test fun explicitOAuthDenialCannotBeOverriddenByInjectedAuthorizationCode() {
+        val deniedCallbacks = listOf(
+            "$redirect?state=$state&error=access_denied",
+            "$redirect?state=$state&code=untrusted&error=access_denied",
+            "$redirect?state=$state&error=invalid_scope&code=untrusted"
+        )
+        deniedCallbacks.forEach { assertNull(code(it, state)) }
+    }
+
     @Test fun unrelatedBrowserPageOrHtmlBodyNeverGrantsAuthorization() {
         assertNull(code(
             "https://www.epicgames.com/id/login?state=$state&code=token", state
