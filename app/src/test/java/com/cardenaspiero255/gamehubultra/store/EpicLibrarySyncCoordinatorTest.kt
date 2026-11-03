@@ -220,6 +220,27 @@ class EpicLibrarySyncCoordinatorTest {
         assertEquals(1, library.writes)
     }
 
+    @Test fun revokedLibraryPermissionLeavesPreviousAccountDataUntouched() = runBlocking {
+        val accounts = Accounts()
+        val library = Library()
+        val cached = StoreLibraryGame(
+            id = "epic:$accountA:licensed", accountId = accountA,
+            platform = GamePlatform.EPIC_GAMES, title = "Cached title",
+            platformGameId = "licensed", artworkUrl = ""
+        )
+        library.games += cached
+        val coordinator = EpicLibrarySyncCoordinator(accounts, library) {
+            throw SecurityException("Epic user consent revoked")
+        }
+
+        assertFailsWith<SecurityException> {
+            coordinator.sync(credentials(accountA), accountA)
+        }
+        assertEquals(listOf(cached), library.getAll())
+        assertEquals(0, accounts.writes)
+        assertEquals(0, library.writes)
+    }
+
     @Test fun emptyBearerTokenIsNotSentToMetadataEndpoint() = runBlocking {
         val accounts = Accounts()
         val library = Library()
