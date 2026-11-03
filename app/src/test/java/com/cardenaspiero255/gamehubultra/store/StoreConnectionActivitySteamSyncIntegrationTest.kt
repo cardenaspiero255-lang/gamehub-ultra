@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -77,20 +76,25 @@ class StoreConnectionActivitySteamSyncIntegrationTest {
             .filter { it.accountId == stored.id }
         assertEquals(1, ownLibrary.size)
         assertEquals("480", ownLibrary.single().platformGameId)
-        assertFalse(ownLibrary.any { it.accountId != stored.id })
     }
 
     @Test fun matchingSelectedSteamIdIsAllowedToRefreshOnlyItsOwnLibrary() = runBlocking {
         val id = "76561198000000016"
+        val beforeLibrary = StoreLibraryStore(context).getAll()
         val activity = activity(id)
         activity.syncSteam(syncResult(id, appId = 570))
         assertTrue(activity.isFinishing)
         val stored = ConnectedGameAccountsStore(context).accountsFlow().first()
             .first { it.platform == GamePlatform.STEAM && it.publicId == id }
+        val afterLibrary = StoreLibraryStore(context).getAll()
         assertEquals(
             listOf("570"),
-            StoreLibraryStore(context).getAll()
-                .filter { it.accountId == stored.id }.map { it.platformGameId }
+            afterLibrary.filter { it.accountId == stored.id }.map { it.platformGameId }
+        )
+        assertEquals(
+            beforeLibrary.filter { it.accountId != stored.id },
+            afterLibrary.filter { it.accountId != stored.id },
+            "Refreshing one Steam account must not erase other accounts' libraries"
         )
     }
 }

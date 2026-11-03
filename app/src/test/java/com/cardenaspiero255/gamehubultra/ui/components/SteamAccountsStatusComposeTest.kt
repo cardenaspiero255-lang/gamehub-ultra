@@ -1,6 +1,5 @@
 package com.cardenaspiero255.gamehubultra.ui.components
 
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
