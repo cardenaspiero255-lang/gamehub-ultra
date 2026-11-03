@@ -91,6 +91,8 @@ internal object EpicIntegrationPolicy {
             }
         }.getOrNull() ?: return null
 
+        // A provider denial must never be interpreted as an authorization success.
+        if (params.any { it.first == "error" }) return null
         val states = params.filter { it.first == "state" }
         val codes = params.filter { it.first == "code" }
         if (states.size != 1 || states.single().second != expectedState ||
