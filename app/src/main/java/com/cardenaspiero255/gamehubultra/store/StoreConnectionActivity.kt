@@ -101,28 +101,35 @@ class StoreConnectionActivity : ComponentActivity() {
                 )
             }
             GamePlatform.EPIC_GAMES -> {
-                val stateBytes = ByteArray(32).also {
-                    java.security.SecureRandom().nextBytes(it)
-                }
-                val state = stateBytes.joinToString("") { "%02x".format(it) }
-                val authorizationUrl = runCatching {
-                    EpicAuthSecurity.requireSecureBackendUrl(
-                        BuildConfig.EPIC_AUTH_BACKEND_URL
+                startEpicAuthorization(
+                    EpicOAuthConfiguration(
+                        backendUrl = BuildConfig.EPIC_AUTH_BACKEND_URL,
+                        clientId = BuildConfig.EPIC_OAUTH_CLIENT_ID,
+                        redirectUri = BuildConfig.EPIC_OAUTH_REDIRECT_URI
                     )
-                    EpicIntegrationPolicy.authorizationUrl(
-                        BuildConfig.EPIC_OAUTH_CLIENT_ID,
-                        BuildConfig.EPIC_OAUTH_REDIRECT_URI,
-                        state
-                    )
-                }.getOrElse {
-                    return finishWithError(
-                        "Epic requiere un cliente OAuth, redirect HTTPS registrado y backend seguro"
-                    )
-                }
-                epicState = state
-                webView.loadUrl(authorizationUrl)
+                )
             }
         }
+    }
+
+    /**
+     * Starts Epic authorization after the Activity's WebView is initialized.
+     * Returns false and closes the Activity if this installation has no owned OAuth config.
+     */
+    internal fun startEpicAuthorization(config: EpicOAuthConfiguration): Boolean {
+        val request = runCatching {
+            EpicAuthorizationRequestFactory.create(
+                config.backendUrl, config.clientId, config.redirectUri
+            )
+        }.getOrElse {
+            finishWithError(
+                "Epic requiere un cliente OAuth, redirect HTTPS registrado y backend seguro"
+            )
+            return false
+        }
+        epicState = request.state
+        webView.loadUrl(request.authorizationUrl)
+        return true
     }
 
     override fun onDestroy() {
