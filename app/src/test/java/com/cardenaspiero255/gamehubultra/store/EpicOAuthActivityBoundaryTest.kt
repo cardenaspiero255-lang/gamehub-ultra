@@ -17,6 +17,7 @@ import java.net.URLDecoder
 import org.junit.runner.RunWith
 import org.mockito.Mockito
 import org.robolectric.Robolectric
+import org.robolectric.Shadows
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
