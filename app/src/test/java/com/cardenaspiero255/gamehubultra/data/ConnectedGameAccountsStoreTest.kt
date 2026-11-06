@@ -3,6 +3,10 @@ package com.cardenaspiero255.gamehubultra.data
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -23,13 +27,14 @@ class ConnectedGameAccountsStoreTest {
     private lateinit var file: File
     private lateinit var scope: CoroutineScope
     private lateinit var store: ConnectedGameAccountsStore
+    private lateinit var dataStore: DataStore<Preferences>
 
     @BeforeTest
     fun setUp() {
         file = File.createTempFile("gamehub-ultra-accounts-", ".preferences_pb")
         file.delete()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
+        dataStore = PreferenceDataStoreFactory.create(
             scope = scope,
             produceFile = { file }
         )
@@ -121,6 +126,48 @@ class ConnectedGameAccountsStoreTest {
         assertEquals(null, refreshed.avatarUrl)
         assertEquals(null, store.accountsFlow().first().single().alias)
         assertEquals(null, store.accountsFlow().first().single().avatarUrl)
+    }
+
+
+
+    @Test fun malformedLegacyRecordsCannotBecomeVisibleOrActive() = runBlocking {
+        fun encoded(vararg fields: String): String = fields.joinToString("|") {
+            Base64.getEncoder().encodeToString(it.toByteArray(StandardCharsets.UTF_8))
+        }
+        val valid = encoded("legacy-id", "STEAM", "Legacy Steam", "76561198000000001")
+        val blankId = encoded("", "STEAM", "Ghost", "76561198000000002")
+        val emptyPublic = encoded("ghost-id", "EPIC_GAMES", "Ghost", "")
+        val badPlatform = encoded("invalid-id", "UNKNOWN", "Ghost", "something")
+        dataStore.edit { prefs ->
+            prefs[stringPreferencesKey("accounts_v1")] = listOf(
+                valid, blankId, emptyPublic, badPlatform, "not-base64"
+            ).joinToString("\n")
+            prefs[stringPreferencesKey("active_account_id_v1")] = "ghost-id"
+        }
+        assertEquals(listOf("legacy-id"), store.accountsFlow().first().map { it.id })
+        assertEquals(null, store.activeAccountIdFlow().first())
+        val current = store.add(GamePlatform.STEAM, "New Steam", "76561198000000003")
+        assertEquals(2, store.accountsFlow().first().size)
+        assertTrue(store.accountsFlow().first().any { it.id == current.id })
+        assertEquals(null, dataStore.data.first()[stringPreferencesKey("accounts_v1")])
+    }
+
+    @Test fun publicAvatarCannotEmbedHttpCredentialsOrSignedSecretParameters() = runBlocking {
+        val first = store.add(
+            GamePlatform.STEAM, "One", "76561198000000006",
+            avatarUrl = "https://user:password@example.test/avatar.png"
+        )
+        val second = store.add(
+            GamePlatform.STEAM, "Two", "76561198000000007",
+            avatarUrl = "https://example.test/avatar.png?access_token=SECRET"
+        )
+        val third = store.add(
+            GamePlatform.STEAM, "Three", "76561198000000008",
+            avatarUrl = "https://example.test/avatar.png#private-fragment"
+        )
+        assertEquals(null, first.avatarUrl)
+        assertEquals(null, second.avatarUrl)
+        assertEquals(null, third.avatarUrl)
     }
 
 

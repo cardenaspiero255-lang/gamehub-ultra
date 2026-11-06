@@ -23,7 +23,8 @@ class StoreLibraryStore(context: Context) : StoreLibraryStateRepository {
                     }.getOrNull() ?: return@repeat
                     val title = item.optString("title").trim()
                     val platformGameId = item.optString("platformGameId").trim()
-                    if (title.isBlank() || platformGameId.isBlank()) return@repeat
+                    if (title.isBlank() || platformGameId.isBlank() ||
+                        item.optString("accountId").isBlank()) return@repeat
                     add(
                         StoreLibraryGame(
                             id = item.optString("id"),
@@ -45,8 +46,18 @@ class StoreLibraryStore(context: Context) : StoreLibraryStateRepository {
         val merged = retained + replacement.distinctBy {
             "${it.platform}:${it.accountId}:${it.platformGameId}"
         }
+        persistGames(merged, durable = false)
+    }
+
+    override fun removeForAccount(accountId: String) {
+        val retained = retainStoreLibraryOutsideAccount(accountId, getAll())
+        // A privacy deletion must reach disk before the account mapping is removed.
+        persistGames(retained, durable = true)
+    }
+
+    private fun persistGames(games: List<StoreLibraryGame>, durable: Boolean) {
         val array = JSONArray()
-        merged.forEach { game ->
+        games.forEach { game ->
             array.put(
                 JSONObject()
                     .put("id", game.id)
@@ -57,11 +68,12 @@ class StoreLibraryStore(context: Context) : StoreLibraryStateRepository {
                     .put("artworkUrl", game.artworkUrl)
             )
         }
-        prefs.edit().putString("games_v1", array.toString()).apply()
-    }
-
-    override fun removeForAccount(accountId: String) {
-        replaceForAccount(accountId, emptyList())
+        val editor = prefs.edit().putString("games_v1", array.toString())
+        if (durable) {
+            check(editor.commit()) { "Unable to durably delete cached account data" }
+        } else {
+            editor.apply()
+        }
     }
 }
 
