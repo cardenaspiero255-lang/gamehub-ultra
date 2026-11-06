@@ -115,11 +115,14 @@ internal fun UnifiedStoreLibrarySection(
                                 )
                                 Text(
                                     group.copies.joinToString(" · ") { copy ->
-                                        when (copy.identity.source) {
+                                        val sourceLabel = when (copy.identity.source) {
                                             UnifiedLibrarySource.INSTALLED -> "Instalado"
                                             UnifiedLibrarySource.STEAM -> "Steam"
                                             UnifiedLibrarySource.EPIC_GAMES -> "Epic"
                                         }
+                                        val accountSuffix = copy.identity.accountId?.takeLast(4)
+                                            ?.let { " (…$it)" }.orEmpty()
+                                        "$sourceLabel$accountSuffix"
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     maxLines = 2
