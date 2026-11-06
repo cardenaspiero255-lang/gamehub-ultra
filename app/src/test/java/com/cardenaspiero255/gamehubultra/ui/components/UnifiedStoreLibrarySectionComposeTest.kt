@@ -68,6 +68,8 @@ class UnifiedStoreLibrarySectionComposeTest {
             )
         }
 
+        composeRule.onNodeWithText("Steam: 1 en caché · sesión no verificada").assertExists()
+        composeRule.onNodeWithText("Epic: 1 en caché · sesión no verificada").assertExists()
         composeRule.onNodeWithText("Epic").performClick()
         composeRule.onNodeWithText("Steam-only game").assertDoesNotExist()
         composeRule.onNodeWithText("Epic-only game").assertExists()
