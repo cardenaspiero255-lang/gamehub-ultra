@@ -25,6 +25,7 @@ import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.UnifiedCrossStoreLibrary
 import com.cardenaspiero255.gamehubultra.data.UnifiedLibraryFilters
 import com.cardenaspiero255.gamehubultra.data.UnifiedLibrarySource
+import com.cardenaspiero255.gamehubultra.domain.GamePlatform
 import com.cardenaspiero255.gamehubultra.ui.library.state.LibraryLocalFilter
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUiTokens
 
@@ -74,6 +75,18 @@ internal fun UnifiedStoreLibrarySection(
             Text(
                 "Instalados + Steam + Epic · datos de tiendas en caché, sesiones no verificadas",
                 style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                "Steam: " + cachedStoreGames.count {
+                    it.platform == GamePlatform.STEAM && it.accountId.isNotBlank()
+                } + " en caché · sesión no verificada",
+                style = MaterialTheme.typography.labelSmall
+            )
+            Text(
+                "Epic: " + cachedStoreGames.count {
+                    it.platform == GamePlatform.EPIC_GAMES && it.accountId.isNotBlank()
+                } + " en caché · sesión no verificada",
+                style = MaterialTheme.typography.labelSmall
             )
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(
