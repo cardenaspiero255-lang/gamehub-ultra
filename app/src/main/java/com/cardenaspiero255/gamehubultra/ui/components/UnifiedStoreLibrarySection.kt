@@ -96,9 +96,7 @@ internal fun UnifiedStoreLibrarySection(
                         UnifiedLibrarySource.EPIC_GAMES.name to "Epic"
                     )
                 ) { (sourceId, label) ->
-                    FilterChip(selected = selectedSourceName == sourceId, onClick = {
-                        selectedSourceName = sourceId
-                    }, label = { Text(label) })
+                    FilterChip(selected = selectedSourceName == sourceId, onClick = { selectedSourceName = sourceId }, label = { Text(label) })
                 }
             }
             if (groups.isEmpty()) {
