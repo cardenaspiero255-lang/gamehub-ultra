@@ -4,7 +4,6 @@ import com.cardenaspiero255.gamehubultra.domain.GamePlatform
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.mockito.Mockito
-import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -48,9 +47,9 @@ class AccountPrivacyRecoveryTest {
         val accounts = Mockito.mock(ConnectedGameAccountsStateRepository::class.java)
         val library = Mockito.mock(StoreLibraryStateRepository::class.java)
         Mockito.`when`(accounts.accountsFlow()).thenReturn(flowOf(listOf(account("keep"))))
-        Mockito.doThrow(IOException("disk full")).`when`(library).removeForAccount("keep")
+        Mockito.doThrow(IllegalStateException("disk full")).`when`(library).removeForAccount("keep")
 
-        assertFailsWith<IOException> {
+        assertFailsWith<IllegalStateException> {
             AccountPrivacyRecovery(accounts, library).disconnect("keep")
         }
         Mockito.verify(accounts, Mockito.never()).remove("keep")
