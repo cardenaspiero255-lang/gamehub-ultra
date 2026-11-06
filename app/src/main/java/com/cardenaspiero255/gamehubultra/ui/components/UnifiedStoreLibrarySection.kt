@@ -46,10 +46,7 @@ internal fun UnifiedStoreLibrarySection(
     val source = UnifiedLibrarySource.entries.firstOrNull {
         it.name == selectedSourceName
     }
-    val groups = remember(
-        installedGames, cachedStoreGames, favoritePackages, recentPackages,
-        query, localFilter, source
-    ) {
+    val groups = remember(installedGames, cachedStoreGames, favoritePackages, recentPackages, query, localFilter, source) {
         UnifiedCrossStoreLibrary.build(
             installedGames = installedGames,
             storeGames = cachedStoreGames,
@@ -76,16 +73,18 @@ internal fun UnifiedStoreLibrarySection(
                 "Instalados + Steam + Epic · datos de tiendas en caché, sesiones no verificadas",
                 style = MaterialTheme.typography.bodySmall
             )
+            val steamCachedCount = cachedStoreGames.count { game ->
+                game.platform == GamePlatform.STEAM && game.accountId.isNotBlank()
+            }
+            val epicCachedCount = cachedStoreGames.count { game ->
+                game.platform == GamePlatform.EPIC_GAMES && game.accountId.isNotBlank()
+            }
             Text(
-                "Steam: " + cachedStoreGames.count {
-                    it.platform == GamePlatform.STEAM && it.accountId.isNotBlank()
-                } + " en caché · sesión no verificada",
+                "Steam: $steamCachedCount en caché · sesión no verificada",
                 style = MaterialTheme.typography.labelSmall
             )
             Text(
-                "Epic: " + cachedStoreGames.count {
-                    it.platform == GamePlatform.EPIC_GAMES && it.accountId.isNotBlank()
-                } + " en caché · sesión no verificada",
+                "Epic: $epicCachedCount en caché · sesión no verificada",
                 style = MaterialTheme.typography.labelSmall
             )
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -97,11 +96,9 @@ internal fun UnifiedStoreLibrarySection(
                         UnifiedLibrarySource.EPIC_GAMES.name to "Epic"
                     )
                 ) { (sourceId, label) ->
-                    FilterChip(
-                        selected = selectedSourceName == sourceId,
-                        onClick = { selectedSourceName = sourceId },
-                        label = { Text(label) }
-                    )
+                    FilterChip(selected = selectedSourceName == sourceId, onClick = {
+                        selectedSourceName = sourceId
+                    }, label = { Text(label) })
                 }
             }
             if (groups.isEmpty()) {
@@ -112,11 +109,7 @@ internal fun UnifiedStoreLibrarySection(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(groups, key = { it.key }) { group ->
-                        Surface(
-                            modifier = Modifier.size(width = 215.dp, height = 114.dp),
-                            shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.surfaceVariant
-                        ) {
+                        Surface(modifier = Modifier.size(215.dp, 114.dp), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant) {
                             Column(
                                 modifier = Modifier.padding(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(3.dp)
