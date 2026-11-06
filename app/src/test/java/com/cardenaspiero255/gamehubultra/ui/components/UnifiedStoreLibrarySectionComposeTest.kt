@@ -68,13 +68,13 @@ class UnifiedStoreLibrarySectionComposeTest {
             )
         }
 
-        composeRule.onNodeWithText("Steam-only game").assertExists()
-        composeRule.onNodeWithText("Epic-only game").assertExists()
         composeRule.onNodeWithText("Epic").performClick()
         composeRule.onNodeWithText("Steam-only game").assertDoesNotExist()
         composeRule.onNodeWithText("Epic-only game").assertExists()
-        composeRule.onNodeWithText("Todos").performClick()
+        composeRule.onNodeWithText("Steam").performClick()
+        composeRule.onNodeWithText("Epic-only game").assertDoesNotExist()
         composeRule.onNodeWithText("Steam-only game").assertExists()
+        composeRule.onNodeWithText("Todos").performClick()
     }
 
     @Test fun favoritesWithOnlyRemoteCopiesDoesNotClaimStoredLicensesAreLocalFavorites() {
