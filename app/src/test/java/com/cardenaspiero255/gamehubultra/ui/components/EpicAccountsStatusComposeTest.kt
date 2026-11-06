@@ -90,6 +90,8 @@ class EpicAccountsStatusComposeTest {
         val rendered = renderEpicAccount(lastSync = 1L, cached = true)
         val context = ApplicationProvider.getApplicationContext<Context>()
         composeRule.onNodeWithText(context.getString(R.string.remove_game)).performClick()
+        Mockito.verify(rendered.library, Mockito.never()).removeForAccount("epic-ui-id")
+        composeRule.onNodeWithText("BORRAR DATOS LOCALES").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             rendered.changeEvents.get() == 1
         }
@@ -98,6 +100,27 @@ class EpicAccountsStatusComposeTest {
         }
         Mockito.verify(rendered.library).removeForAccount("epic-ui-id")
         assertEquals(1, rendered.changeEvents.get())
+    }
+
+    @Test fun dismissingDeletionConfirmationPreservesAccountAndOfflineCache() {
+        val rendered = renderEpicAccount(lastSync = 1L, cached = true)
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        composeRule.onNodeWithText(context.getString(R.string.remove_game)).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.close)).performClick()
+        composeRule.waitForIdle()
+        Mockito.verify(rendered.library, Mockito.never()).removeForAccount("epic-ui-id")
+        runBlocking {
+            Mockito.verify(rendered.accounts, Mockito.never()).remove("epic-ui-id")
+        }
+        assertEquals(0, rendered.changeEvents.get())
+    }
+
+    @Test fun staleEpicAccountOffersExplicitReauthenticationWithoutClaimingSession() {
+        renderEpicAccount(lastSync = 1L, cached = true)
+        composeRule.onNodeWithText("REAUTENTICAR").assertExists()
+        composeRule.onNodeWithText(
+            "Epic: caché local antigua; vuelve a iniciar sesión para actualizar."
+        ).assertExists()
     }
 
     @Test fun activatingEpicAccountSelectsOnlyItsOwnIdentifier() {
