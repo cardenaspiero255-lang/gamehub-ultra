@@ -43,7 +43,7 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
 import com.cardenaspiero255.gamehubultra.ui.components.InstalledGameCarouselCard
 import com.cardenaspiero255.gamehubultra.ui.components.SelectedGameHero
-import com.cardenaspiero255.gamehubultra.ui.components.StoreLibrarySection
+import com.cardenaspiero255.gamehubultra.ui.components.UnifiedStoreLibrarySection
 import com.cardenaspiero255.gamehubultra.ui.layout.LibraryHeroLayout
 import com.cardenaspiero255.gamehubultra.ui.layout.LibraryLayoutPolicy
 import com.cardenaspiero255.gamehubultra.ui.library.state.LibraryCategory
@@ -149,14 +149,6 @@ internal fun LibraryScreen(
     val selectedGameExists = remember(result?.games, selectedGamePackage) {
         result?.games.orEmpty().any { game -> game.packageName == selectedGamePackage }
     }
-    val visibleStoreGames = remember(storeGames, libraryUiState.query) {
-        storeGames.filter { game ->
-            libraryUiState.query.isBlank() ||
-                game.title.contains(libraryUiState.query, ignoreCase = true) ||
-                game.platformGameId.contains(libraryUiState.query, ignoreCase = true)
-        }
-    }
-
     val configuration = LocalConfiguration.current
     val gridMetrics = remember(configuration.screenWidthDp) {
         LibraryLayoutPolicy.metricsForWidthDp(configuration.screenWidthDp)
@@ -519,7 +511,14 @@ internal fun LibraryScreen(
         }
 
         item(span = { GridItemSpan(maxLineSpan) }) {
-            StoreLibrarySection(games = visibleStoreGames)
+            UnifiedStoreLibrarySection(
+                installedGames = result?.games.orEmpty(),
+                cachedStoreGames = storeGames,
+                favoritePackages = favoriteGames,
+                recentPackages = recentGamePackages,
+                query = libraryUiState.query,
+                localFilter = libraryUiState.localFilter
+            )
         }
     }
 
