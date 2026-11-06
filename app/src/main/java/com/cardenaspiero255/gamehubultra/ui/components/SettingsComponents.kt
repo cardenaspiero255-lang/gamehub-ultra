@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra.ui.components
 
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +33,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
+import com.cardenaspiero255.gamehubultra.data.AccountPrivacyRecovery
+import com.cardenaspiero255.gamehubultra.data.AccountPrivacyExport
+import com.cardenaspiero255.gamehubultra.data.AccountRecoveryPolicy
+import com.cardenaspiero255.gamehubultra.data.AccountRecoveryState
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.SteamAccountSessionState
@@ -42,7 +47,10 @@ import com.cardenaspiero255.gamehubultra.platform.GamePlatformLinks
 import com.cardenaspiero255.gamehubultra.store.EpicConnectionHealth
 import com.cardenaspiero255.gamehubultra.store.StoreConnectionActivity
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUiTokens
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 @Composable
 internal fun ConnectedAccountsCard(
@@ -70,6 +78,9 @@ internal fun ConnectedAccountsCard(
     var alias by rememberSaveable { mutableStateOf("") }
     var avatarUrl by rememberSaveable { mutableStateOf("") }
     var browserError by rememberSaveable { mutableStateOf(false) }
+    var pendingRemovalAccountId by rememberSaveable { mutableStateOf<String?>(null) }
+    var disconnectFailed by rememberSaveable { mutableStateOf(false) }
+    var exportFailed by rememberSaveable { mutableStateOf(false) }
     val connectionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -164,13 +175,16 @@ internal fun ConnectedAccountsCard(
                     onActivate = {
                         scope.launch { store.setActiveAccount(account.id) }
                     },
-                    onRemove = {
-                        scope.launch {
-                            store.remove(account.id)
-                            storeLibraryRepository.removeForAccount(account.id)
-                            onStoreConnectionChanged()
-                        }
-                    },
+                    reauthenticationRequired = AccountRecoveryPolicy.evaluate(
+                        account.lastSyncedAtMillis,
+                        account.id in if (account.platform == GamePlatform.STEAM) {
+                            cachedSteamAccountIds
+                        } else {
+                            cachedEpicAccountIds
+                        },
+                        System.currentTimeMillis()
+                    ) == AccountRecoveryState.REAUTH_REQUIRED,
+                    onRemove = { pendingRemovalAccountId = account.id },
                     onSync = {
                         connectionLauncher.launch(
                             StoreConnectionActivity.newIntent(
@@ -199,6 +213,28 @@ internal fun ConnectedAccountsCard(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+            TextButton(onClick = {
+                runCatching {
+                    val report = AccountPrivacyExport.create(
+                        accounts, storeLibraryRepository.getAll()
+                    )
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, report)
+                    }
+                    context.startActivity(
+                        Intent.createChooser(intent, "Compartir informe local de cuentas")
+                    )
+                }.onFailure { exportFailed = true }
+            }) {
+                Text("EXPORTAR INFORME SIN SECRETOS")
+            }
+            if (disconnectFailed) {
+                Text("No se completó el borrado local. Reintenta la desconexión.")
+            }
+            if (exportFailed) {
+                Text("No se pudo compartir el informe local.")
+            }
             if (browserError) {
                 Text(
                     stringResource(R.string.accounts_browser_failed),
@@ -206,6 +242,48 @@ internal fun ConnectedAccountsCard(
                 )
             }
         }
+    }
+
+    pendingRemovalAccountId?.let { accountId ->
+        AlertDialog(
+            onDismissRequest = { pendingRemovalAccountId = null },
+            title = { Text("Desconectar cuenta y borrar caché") },
+            text = {
+                Text(
+                    "Se borrará la cuenta guardada y sus juegos en caché local. " +
+                        "No se revocan sesiones externas de Steam o Epic."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingRemovalAccountId = null
+                    scope.launch {
+                        try {
+                            val removed = withContext(Dispatchers.IO) {
+                                AccountPrivacyRecovery(
+                                    store, storeLibraryRepository
+                                ).disconnect(accountId)
+                            }
+                            if (removed) {
+                                disconnectFailed = false
+                                onStoreConnectionChanged()
+                            } else {
+                                disconnectFailed = true
+                            }
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (_: Exception) {
+                            disconnectFailed = true
+                        }
+                    }
+                }) { Text("BORRAR DATOS LOCALES") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemovalAccountId = null }) {
+                    Text(stringResource(R.string.close))
+                }
+            }
+        )
     }
 
     if (showAddDialog) {
@@ -303,7 +381,8 @@ internal fun ConnectedAccountRow(
     onOpen: () -> Unit,
     onSync: () -> Unit,
     steamStatus: SteamAccountSessionState? = null,
-    epicStatus: String? = null
+    epicStatus: String? = null,
+    reauthenticationRequired: Boolean = false
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -332,7 +411,7 @@ internal fun ConnectedAccountRow(
                 Text(if (active) "ACTIVA" else "ACTIVAR")
             }
             TextButton(onClick = onSync) {
-                Text("SYNC")
+                Text(if (reauthenticationRequired) "REAUTENTICAR" else "SYNC")
             }
             if (account.platform == GamePlatform.STEAM) {
                 TextButton(onClick = onOpen) {
