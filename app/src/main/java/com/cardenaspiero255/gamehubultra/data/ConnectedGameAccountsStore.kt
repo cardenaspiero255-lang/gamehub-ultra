@@ -12,6 +12,7 @@ import com.cardenaspiero255.gamehubultra.domain.GamePlatform
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.nio.charset.StandardCharsets
+import java.net.URI
 import java.util.Base64
 import java.util.UUID
 
@@ -185,11 +186,14 @@ class ConnectedGameAccountsStore(
     private fun decode(line: String): ConnectedGameAccount? = runCatching {
         val fields = line.split("|")
         if (fields.size != 4 && fields.size != 7) return null
+        val id = decodeField(fields[0]).trim()
+        val publicId = decodeField(fields[3]).trim()
+        if (id.isBlank() || publicId.isBlank()) return null
         ConnectedGameAccount(
-            id = decodeField(fields[0]),
+            id = id,
             platform = GamePlatform.valueOf(decodeField(fields[1])),
-            displayName = decodeField(fields[2]),
-            publicId = decodeField(fields[3]),
+            displayName = decodeField(fields[2]).ifBlank { publicId },
+            publicId = publicId,
             alias = if (fields.size == 7) decodeField(fields[4]).takeIf(String::isNotBlank) else null,
             avatarUrl = if (fields.size == 7) sanitizePublicUrl(decodeField(fields[5])) else null,
             lastSyncedAtMillis = if (fields.size == 7) {
@@ -203,9 +207,13 @@ class ConnectedGameAccountsStore(
 
     private fun sanitizePublicUrl(value: String?): String? {
         val trimmed = value?.trim().orEmpty()
+        val uri = runCatching { URI(trimmed) }.getOrNull() ?: return null
         return trimmed.takeIf {
-            it.startsWith("https://", ignoreCase = true) ||
-                it.startsWith("http://", ignoreCase = true)
+            uri.scheme.equals("https", ignoreCase = true) &&
+                !uri.host.isNullOrBlank() &&
+                uri.userInfo == null &&
+                uri.rawQuery == null &&
+                uri.rawFragment == null
         }
     }
 }
