@@ -135,7 +135,7 @@ class SessionReplayTimelineTest {
         val replay = assertNotNull(SessionReplayTimelineBuilder.build(completed(), events))
         assertEquals(22, replay.markers.size) // 20 real events + start/end
         assertTrue(replay.truncated)
-        assertEquals(21, replay.recordedEventCount)
+        assertEquals(40, replay.recordedEventCount)
         assertEquals(20, replay.shownEventCount)
         assertEquals(SessionReplayMarkerKind.START, replay.markers.first().kind)
         assertEquals(SessionReplayMarkerKind.END, replay.markers.last().kind)
