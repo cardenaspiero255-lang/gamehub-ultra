@@ -42,17 +42,22 @@ class StoreConnectionActivity : ComponentActivity() {
     companion object {
         const val EXTRA_PLATFORM = "platform"
         const val EXTRA_EXPECTED_STEAM_ID = "expected_steam_id"
+        const val EXTRA_EXPECTED_EPIC_ID = "expected_epic_id"
         private const val POLL_MS = 1800L
         private const val MAX_WAIT_MS = 90_000L
 
         fun newIntent(
             context: android.content.Context,
             platform: GamePlatform,
-            expectedSteamId: String? = null
+            expectedSteamId: String? = null,
+            expectedEpicId: String? = null
         ) = android.content.Intent(context, StoreConnectionActivity::class.java).apply {
             putExtra(EXTRA_PLATFORM, platform.name)
             if (platform == GamePlatform.STEAM && expectedSteamId != null) {
                 putExtra(EXTRA_EXPECTED_STEAM_ID, expectedSteamId)
+            }
+            if (platform == GamePlatform.EPIC_GAMES && expectedEpicId != null) {
+                putExtra(EXTRA_EXPECTED_EPIC_ID, expectedEpicId)
             }
         }
     }
@@ -96,33 +101,35 @@ class StoreConnectionActivity : ComponentActivity() {
                 )
             }
             GamePlatform.EPIC_GAMES -> {
-                runCatching {
-                    EpicAuthSecurity.requireSecureBackendUrl(
-                        BuildConfig.EPIC_AUTH_BACKEND_URL
+                startEpicAuthorization(
+                    EpicOAuthConfiguration(
+                        backendUrl = BuildConfig.EPIC_AUTH_BACKEND_URL,
+                        clientId = BuildConfig.EPIC_OAUTH_CLIENT_ID,
+                        redirectUri = BuildConfig.EPIC_OAUTH_REDIRECT_URI
                     )
-                }.onFailure {
-                    return finishWithError(
-                        "Epic requiere un backend HTTPS seguro para iniciar sesión"
-                    )
-                }
-
-                val stateBytes = ByteArray(32).also {
-                    java.security.SecureRandom().nextBytes(it)
-                }
-                val state = stateBytes.joinToString("") { "%02x".format(it) }
-                epicState = state
-                val redirect = Uri.encode(
-                    EpicConstants.REDIRECT_URI +
-                        "?clientId=" + EpicConstants.CLIENT_ID +
-                        "&responseType=code"
-                )
-                webView.loadUrl(
-                    EpicConstants.AUTH_BASE_URL + "/id/login" +
-                        "?redirectUrl=" + redirect +
-                        "&state=" + Uri.encode(state)
                 )
             }
         }
+    }
+
+    /**
+     * Starts Epic authorization after the Activity's WebView is initialized.
+     * Returns false and closes the Activity if this installation has no owned OAuth config.
+     */
+    internal fun startEpicAuthorization(config: EpicOAuthConfiguration): Boolean {
+        val request = runCatching {
+            EpicAuthorizationRequestFactory.create(
+                config.backendUrl, config.clientId, config.redirectUri
+            )
+        }.getOrElse {
+            finishWithError(
+                "Epic requiere un cliente OAuth, redirect HTTPS registrado y backend seguro"
+            )
+            return false
+        }
+        epicState = request.state
+        webView.loadUrl(request.authorizationUrl)
+        return true
     }
 
     override fun onDestroy() {
@@ -138,8 +145,13 @@ class StoreConnectionActivity : ComponentActivity() {
             view: WebView,
             request: WebResourceRequest
         ): Boolean {
-            if (platform == GamePlatform.EPIC_GAMES) {
+            if (platform == GamePlatform.EPIC_GAMES &&
+                EpicIntegrationPolicy.matchesRegisteredRedirect(
+                    request.url.toString(), BuildConfig.EPIC_OAUTH_REDIRECT_URI
+                )
+            ) {
                 handleEpicRedirect(request.url)
+                return true
             }
             return false
         }
@@ -217,26 +229,12 @@ class StoreConnectionActivity : ComponentActivity() {
 
     private fun handleEpicRedirect(uri: Uri) {
         if (finished) return
-        val expected = Uri.parse(EpicConstants.REDIRECT_URI)
-        if (!uri.scheme.equals(expected.scheme, true) ||
-            !uri.host.equals(expected.host, true) ||
-            uri.path != expected.path
-        ) return
-        if (uri.getQueryParameter("state") != epicState) return
-
-        val code = uri.getQueryParameter("code")
-        if (!code.isNullOrBlank()) {
-            authenticateEpic(code)
-            return
-        }
-
-        webView.evaluateJavascript(
-            "(function(){try{return JSON.parse(document.body&&document.body.innerText||'{}')" +
-                ".authorizationCode||null}catch(e){return null}})();"
-        ) { jsResult ->
-            val bodyCode = unquoteJsonString(jsResult)
-            if (!bodyCode.isNullOrBlank()) authenticateEpic(bodyCode)
-        }
+        // OAuth only: reject cross-origin, mismatched state and body-scraped codes.
+        val code = EpicIntegrationPolicy.authorizationCode(
+            uri.toString(), epicState, BuildConfig.EPIC_OAUTH_REDIRECT_URI
+        )
+            ?: return
+        authenticateEpic(code)
     }
 
     private fun authenticateEpic(code: String) {
@@ -248,48 +246,25 @@ class StoreConnectionActivity : ComponentActivity() {
                 val credentials = withContext(Dispatchers.IO) {
                     EpicStoreClient.exchangeCode(code)
                 }
-                val account = withContext(Dispatchers.IO) {
-                    accountsRepository.upsert(
-                        GamePlatform.EPIC_GAMES,
-                        credentials.displayName.ifBlank { "Epic Games" },
-                        credentials.accountId
+                val importedCount = withContext(Dispatchers.IO) {
+                    EpicLibrarySyncCoordinator(
+                        accounts = accountsRepository,
+                        library = storeLibraryRepository,
+                        fetchLibrary = { token -> EpicStoreClient.fetchLibrary(token) }
+                    ).sync(
+                        credentials,
+                        intent.getStringExtra(EXTRA_EXPECTED_EPIC_ID)
                     )
                 }
-                val games = withContext(Dispatchers.IO) {
-                    EpicStoreClient.fetchLibrary(credentials.accessToken)
-                }.map {
-                    StoreLibraryGame(
-                        id = "epic:" + account.id + ":" + it.appName,
-                        accountId = account.id,
-                        platform = GamePlatform.EPIC_GAMES,
-                        title = it.title,
-                        platformGameId = it.appName,
-                        artworkUrl = it.artworkUrl
-                    )
-                }
-                storeLibraryRepository.replaceForAccount(account.id, games)
                 finishSuccess(
-                    "Epic Games conectado · " + games.size + " juegos sincronizados"
+                    "Epic Games conectado · " + importedCount + " juegos sincronizados"
                 )
             }.onFailure {
                 finished = false
                 finishWithError(
-                    "Epic no pudo sincronizar la biblioteca: " +
-                        it.message.orEmpty().take(180)
+                    "Epic no pudo verificar o sincronizar esta cuenta; la caché anterior se conserva"
                 )
             }
-        }
-    }
-
-    private fun unquoteJsonString(value: String?): String? {
-        if (value.isNullOrBlank() || value.trim() == "null") return null
-        val raw = value.trim()
-        return if (raw.length >= 2 && raw.first() == '"' && raw.last() == '"') {
-            runCatching {
-                org.json.JSONTokener(raw).nextValue() as? String
-            }.getOrNull()
-        } else {
-            raw
         }
     }
 
@@ -320,23 +295,15 @@ internal data class SteamSyncResult(
     val games: List<SteamGameResult>
 )
 
-private data class EpicCredentials(
+internal data class EpicCredentials(
     val accessToken: String,
     val refreshToken: String,
     val accountId: String,
     val displayName: String,
     val expiresAt: Long
-) {
-    fun asJson(): String = JSONObject()
-        .put("accessToken", accessToken)
-        .put("refreshToken", refreshToken)
-        .put("accountId", accountId)
-        .put("displayName", displayName)
-        .put("expiresAt", expiresAt)
-        .toString()
-}
+)
 
-private data class EpicLibraryGame(
+internal data class EpicLibraryGame(
     val appName: String,
     val title: String,
     val artworkUrl: String
@@ -437,12 +404,7 @@ private object SteamStoreClient {
 }
 
 private object EpicConstants {
-    const val CLIENT_ID = "34a02cf8f4414e29b15921876da36f9a"
-
-    const val AUTH_BASE_URL = "https://www.epicgames.com"
-
     const val LIBRARY_HOST = "library-service.live.use1a.on.epicgames.com"
-    const val REDIRECT_URI = "https://www.epicgames.com/id/api/redirect"
 }
 
 private object EpicStoreClient {
@@ -454,8 +416,8 @@ private object EpicStoreClient {
             backendUrl,
             JSONObject()
                 .put("code", code)
-                .put("clientId", EpicConstants.CLIENT_ID)
-                .put("redirectUri", EpicConstants.REDIRECT_URI)
+                .put("clientId", BuildConfig.EPIC_OAUTH_CLIENT_ID)
+                .put("redirectUri", BuildConfig.EPIC_OAUTH_REDIRECT_URI)
         )
         return EpicCredentials(
             accessToken = json.getString("access_token"),

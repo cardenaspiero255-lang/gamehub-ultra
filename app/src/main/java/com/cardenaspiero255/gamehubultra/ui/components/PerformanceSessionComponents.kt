@@ -22,6 +22,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
+import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
+import com.cardenaspiero255.gamehubultra.domain.SessionReplayTimelineBuilder
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage
@@ -44,9 +46,11 @@ internal fun formatDuration(durationMillis: Long): String {
 internal fun SessionCenterCard(
     context: Context,
     sessions: List<GameSessionRecord>,
+    events: List<PerformanceEvent>,
     onClear: () -> Unit,
     onShare: () -> Unit
 ) {
+    var expandedSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -69,6 +73,41 @@ internal fun SessionCenterCard(
                         label = session.packageName,
                         value = session.profileName + " · " + duration
                     )
+                    if (!session.isActive) {
+                        TextButton(onClick = {
+                            expandedSessionId = if (expandedSessionId == session.id) {
+                                null
+                            } else {
+                                session.id
+                            }
+                        }) {
+                            Text(if (expandedSessionId == session.id) "OCULTAR REPLAY" else "VER REPLAY")
+                        }
+                        if (expandedSessionId == session.id) {
+                            val replay = SessionReplayTimelineBuilder.build(session, events)
+                            if (replay != null) {
+                                Text(
+                                    "Replay de sesión · ${replay.markers.size} marcadores",
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Text(
+                                    "Refresco y latencia: sin historial registrado",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                if (replay.truncated) {
+                                    Text("Solo los últimos ${replay.shownEventCount} cambios conservados.")
+                                }
+                                replay.markers.forEach { marker ->
+                                    Text(
+                                        formatDuration(marker.elapsedMillis) + " · " + marker.label(),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            } else {
+                                Text("No existe un replay válido para esta sesión.")
+                            }
+                        }
+                    }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
