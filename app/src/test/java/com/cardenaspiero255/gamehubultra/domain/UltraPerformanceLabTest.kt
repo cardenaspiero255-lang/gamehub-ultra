@@ -111,6 +111,17 @@ class UltraPerformanceLabTest {
         assertFalse(result.disclaimer.contains("FPS reales garantizados"))
     }
 
+    @Test fun stableNonOverlappingSlowdownIsReportedOnlyForSyntheticCpuTime() {
+        val result = UltraBenchmarkStatistics.compare(
+            run(listOf(100, 101, 102, 103, 104)),
+            run(listOf(195, 198, 200, 202, 205), "X4")
+        )
+        assertEquals(SyntheticComparisonStatus.SLOWER, result.status)
+        val relative = assertNotNull(result.relativePercent)
+        assertTrue(relative < -50.0)
+        assertTrue(result.disclaimer.contains("no son FPS"))
+    }
+
     @Test fun overlappingTimesNeverProduceConfidentCausalClaim() {
         val result = UltraBenchmarkStatistics.compare(
             run(listOf(100, 110, 110, 120, 120)),
