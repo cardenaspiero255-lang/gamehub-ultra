@@ -248,6 +248,7 @@ internal fun HomeScreen(
             SessionCenterCard(
                 context = LocalContext.current,
                 sessions = sessionHistory,
+                events = performanceHistory,
                 onClear = onClearSessions,
                 onShare = onShareSessions
             )
