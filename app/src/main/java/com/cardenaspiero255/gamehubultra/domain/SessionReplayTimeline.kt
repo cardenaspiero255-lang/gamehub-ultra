@@ -105,7 +105,9 @@ internal object SessionReplayTimelineBuilder {
         val start = SessionReplayMarker(
             kind = SessionReplayMarkerKind.START,
             elapsedMillis = 0L,
-            profileName = session.profileName.takeIf(String::isNotBlank),
+            profileName = session.profileName.takeIf { candidate ->
+                PerformanceProfile.entries.any { it.name == candidate }
+            },
             batteryPercent = session.startBatteryPercent?.takeIf { it in 0..100 }
         )
         val end = SessionReplayMarker(
