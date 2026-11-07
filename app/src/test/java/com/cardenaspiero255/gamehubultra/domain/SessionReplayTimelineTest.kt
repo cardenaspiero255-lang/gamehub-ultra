@@ -141,6 +141,14 @@ class SessionReplayTimelineTest {
         assertEquals(SessionReplayMarkerKind.END, replay.markers.last().kind)
     }
 
+    @Test fun corruptPersistedProfileTextCannotInjectSecretsIntoReplay() {
+        val malicious = completed().copy(profileName = "access_token=TOPSECRET")
+        val replay = assertNotNull(SessionReplayTimelineBuilder.build(malicious, emptyList()))
+        assertNull(replay.markers.first().profileName)
+        assertFalse(replay.markers.first().label().contains("TOPSECRET"))
+        assertFalse(replay.markers.first().label().contains("access_token"))
+    }
+
     @Test fun sessionIdMustMatchExactlyWithoutCrossSessionDataLeakage() {
         val replay = assertNotNull(SessionReplayTimelineBuilder.build(
             completed(id = "abc"),
