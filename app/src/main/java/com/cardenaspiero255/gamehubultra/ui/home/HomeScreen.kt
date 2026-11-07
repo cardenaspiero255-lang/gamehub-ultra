@@ -254,6 +254,9 @@ internal fun HomeScreen(
             )
         }
         item {
+            UltraPerformanceLabCard(selectedProfileName = selectedProfileName)
+        }
+        item {
             AiSessionCoachCard(
                 preSession = sessionCoachPreMessage,
                 liveSamples = sessionCoachSamples,
