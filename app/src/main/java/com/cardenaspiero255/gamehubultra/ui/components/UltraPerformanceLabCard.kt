@@ -126,13 +126,9 @@ internal fun UltraPerformanceLabCard(
             }
             val comparisonText = when (comparison?.status) {
                 SyntheticComparisonStatus.FASTER ->
-                    "Carga sintética más rápida: " + String.format(
-                        Locale.US, "%.1f", comparison.relativePercent
-                    ) + "%; no implica mejora de FPS."
+                    "Carga sintética más rápida: " + String.format(Locale.US, "%.1f", comparison.relativePercent) + "%; no implica mejora de FPS."
                 SyntheticComparisonStatus.SLOWER ->
-                    "Carga sintética más lenta: " + String.format(
-                        Locale.US, "%.1f", -requireNotNull(comparison.relativePercent)
-                    ) + "%; no implica pérdida de FPS."
+                    "Carga sintética más lenta: " + String.format(Locale.US, "%.1f", -requireNotNull(comparison.relativePercent)) + "%; no implica pérdida de FPS."
                 SyntheticComparisonStatus.INCOMPARABLE ->
                     "Comparación real: contextos incompatibles, sin conclusión."
                 else -> "Comparación real: sin datos suficientes."
