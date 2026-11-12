@@ -1,0 +1,26 @@
+name: GameHub Control Center
+on:
+  pull_request:
+    paths:
+      - 'control-center/**'
+      - '.github/workflows/control-center.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'control-center/**'
+      - '.github/workflows/control-center.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Confirm Node.js runtime
+        run: node --version
+      - name: Run dashboard unit tests and syntax checks
+        working-directory: control-center
+        run: npm run check
