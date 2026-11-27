@@ -190,6 +190,10 @@ android {
                 "https://repo.maven.apache.org/maven2"
             )
             it.systemProperty("robolectric.dependency.repo.id", "mavenCentral")
+            it.systemProperty(
+                "gamehub.test.epicAuthBackendUrl",
+                "https://auth.example.invalid"
+            )
         }
     }
 }
