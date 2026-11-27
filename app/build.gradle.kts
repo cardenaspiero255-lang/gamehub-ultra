@@ -182,6 +182,12 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            it.systemProperty(
+                "gamehub.test.epicAuthBackendUrl",
+                "https://auth.example.invalid"
+            )
+        }
     }
 }
 
