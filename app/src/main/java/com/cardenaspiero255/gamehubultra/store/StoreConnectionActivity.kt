@@ -57,6 +57,15 @@ class StoreConnectionActivity : ComponentActivity() {
         }
     }
 
+    private fun epicAuthBackendUrl(): String {
+        val testOverride = if (BuildConfig.DEBUG) {
+            System.getProperty("gamehub.test.epicAuthBackendUrl")
+        } else {
+            null
+        }
+        return testOverride?.takeIf { it.isNotBlank() } ?: BuildConfig.EPIC_AUTH_BACKEND_URL
+    }
+
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
     private val handler = Handler(Looper.getMainLooper())
@@ -97,9 +106,7 @@ class StoreConnectionActivity : ComponentActivity() {
             }
             GamePlatform.EPIC_GAMES -> {
                 runCatching {
-                    EpicAuthSecurity.requireSecureBackendUrl(
-                        BuildConfig.EPIC_AUTH_BACKEND_URL
-                    )
+                    EpicAuthSecurity.requireSecureBackendUrl(epicAuthBackendUrl())
                 }.onFailure {
                     return finishWithError(
                         "Epic requiere un backend HTTPS seguro para iniciar sesión"
