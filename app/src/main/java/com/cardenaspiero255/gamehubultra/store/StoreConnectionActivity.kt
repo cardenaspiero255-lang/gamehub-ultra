@@ -57,6 +57,15 @@ class StoreConnectionActivity : ComponentActivity() {
         }
     }
 
+    private fun epicAuthBackendUrl(): String {
+        val testOverride = if (BuildConfig.DEBUG) {
+            System.getProperty("gamehub.test.epicAuthBackendUrl")
+        } else {
+            null
+        }
+        return testOverride?.takeIf { it.isNotBlank() } ?: BuildConfig.EPIC_AUTH_BACKEND_URL
+    }
+
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
     private val handler = Handler(Looper.getMainLooper())
@@ -97,9 +106,7 @@ class StoreConnectionActivity : ComponentActivity() {
             }
             GamePlatform.EPIC_GAMES -> {
                 runCatching {
-                    EpicAuthSecurity.requireSecureBackendUrl(
-                        BuildConfig.EPIC_AUTH_BACKEND_URL
-                    )
+                    EpicAuthSecurity.requireSecureBackendUrl(epicAuthBackendUrl())
                 }.onFailure {
                     return finishWithError(
                         "Epic requiere un backend HTTPS seguro para iniciar sesión"
@@ -117,7 +124,7 @@ class StoreConnectionActivity : ComponentActivity() {
                         "&responseType=code"
                 )
                 webView.loadUrl(
-                    EpicConstants.AUTH_BASE_URL + "/id/login" +
+                    EpicConstants.EPIC_WEB_ORIGIN + "/id/login" +
                         "?redirectUrl=" + redirect +
                         "&state=" + Uri.encode(state)
                 )
@@ -439,7 +446,7 @@ private object SteamStoreClient {
 private object EpicConstants {
     const val CLIENT_ID = "34a02cf8f4414e29b15921876da36f9a"
 
-    const val AUTH_BASE_URL = "https://www.epicgames.com"
+    const val EPIC_WEB_ORIGIN = "https://www.epicgames.com"
 
     const val LIBRARY_HOST = "library-service.live.use1a.on.epicgames.com"
     const val REDIRECT_URI = "https://www.epicgames.com/id/api/redirect"
