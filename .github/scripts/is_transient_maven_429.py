@@ -8,13 +8,13 @@ from pathlib import Path
 
 
 _MAVEN_HOST = re.compile(
-    r"https?://(?:repo1?\\.maven\\.org|repo\\.maven\\.apache\\.org)(?:/|\\b)",
+    r"https?://(?:repo1?\.maven\.org|repo\.maven\.apache\.org)(?:/|\b)",
     re.IGNORECASE,
 )
 _HTTP_429 = re.compile(
-    r"(?:HTTP\\s+response\\s+code\\s*:\\s*429|"
-    r"(?:received\\s+)?status\\s+code\\s+429|"
-    r"429\\s+Too\\s+Many\\s+Requests)",
+    r"(?:HTTP\s+response\s+code\s*:\s*429|"
+    r"(?:received\s+)?status\s+code\s+429|"
+    r"429\s+Too\s+Many\s+Requests)",
     re.IGNORECASE,
 )
 
