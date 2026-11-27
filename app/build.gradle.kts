@@ -182,6 +182,15 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // Robolectric's runtime SDK jars are fetched outside Gradle's dependency cache.
+        // Use Maven Central's canonical endpoint instead of the legacy repo1 hostname.
+        unitTests.all {
+            it.systemProperty(
+                "robolectric.dependency.repo.url",
+                "https://repo.maven.apache.org/maven2"
+            )
+            it.systemProperty("robolectric.dependency.repo.id", "mavenCentral")
+        }
     }
 }
 
