@@ -21,7 +21,10 @@ _HTTP_429 = re.compile(
 
 def is_transient_maven_429(log: str) -> bool:
     """Return true only when a Maven Central endpoint returned HTTP 429."""
-    return bool(_MAVEN_HOST.search(log) and _HTTP_429.search(log))
+    return any(
+        _MAVEN_HOST.search(line) and _HTTP_429.search(line)
+        for line in log.splitlines()
+    )
 
 
 def main() -> int:
