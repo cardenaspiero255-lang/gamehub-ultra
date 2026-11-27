@@ -30,14 +30,14 @@ class StoreConnectionActivityEpicLoginTest {
             val field = StoreConnectionActivity::class.java.getDeclaredField("webView")
                 .apply { isAccessible = true }
             val webView = field.get(controller.get()) as WebView
-            val login = Uri.parse(webView.url)
+            val login = Uri.parse(webView.url.orEmpty())
 
             assertEquals("https", login.scheme)
             assertEquals("www.epicgames.com", login.host)
             assertEquals("/id/login", login.path)
 
             val state = login.getQueryParameter("state")
-            assertTrue(!state.isNullOrBlank())
+                ?: error("Epic login URL must include OAuth state")
             assertEquals(64, state.length)
             assertTrue(state.all { it in "0123456789abcdef" })
 
