@@ -150,9 +150,6 @@ jobs:
             TEST_ARGS+=(--tests "$test_class")
           done
 
-          # Keep the retry classifier under unit test before using it.
-          python3 -m unittest discover -s .github/scripts -p "test_coverage_retry.py" -v
-
           # Maven Central can respond with HTTP 429 when CI runners resolve
           # Robolectric concurrently. Retry only that transient failure.
           # Test failures and persistent dependency errors remain blocking.
@@ -180,7 +177,8 @@ jobs:
               exit 0
             fi
             if [ "$attempt" -eq 3 ] || \
-               ! python3 .github/scripts/is_transient_maven_429.py "$attempt_log"; then
+               ! grep -Fq "repo.maven.apache.org" "$attempt_log" || \
+               ! grep -Fq "Received status code 429 from server: Too Many Requests" "$attempt_log"; then
               exit "$gradle_status"
             fi
 
