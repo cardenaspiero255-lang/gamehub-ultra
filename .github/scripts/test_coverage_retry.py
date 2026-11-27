@@ -36,6 +36,13 @@ class Maven429RetryTests(unittest.TestCase):
         log = "HTTP response code: 429 for https://api.example.com/endpoint"
         self.assertFalse(self.module.is_transient_maven_429(log))
 
+    def test_does_not_combine_maven_url_and_unrelated_429_from_different_lines(self):
+        log = (
+            "Resolving dependency from https://repo1.maven.org/maven2/x.jar\\n"
+            "HTTP response code: 429 for https://api.example.com/endpoint"
+        )
+        self.assertFalse(self.module.is_transient_maven_429(log))
+
 
 if __name__ == "__main__":
     unittest.main()
