@@ -2,6 +2,8 @@
 
 This roadmap begins only after CAR-29 and CAR-30 satisfy their full acceptance gates. It expands GameHub Ultra without fabricating hardware capabilities, relying on privileged APIs that Android does not expose, or hiding CI failures.
 
+> **SSS additive expansion:** the original scope of CAR-44..69 is preserved and strengthened by `docs/ULTRA-SSS-EXPANSION-CAR-44-85.md`. Existing CAR-70..74 numbers are historical foundations and are not reused; new SSS megacapabilities begin at CAR-75.
+
 ## Global acceptance gate for CAR-31..70
 Every CAR must satisfy all applicable checks before it is marked complete:
 1. JVM/unit tests pass.
