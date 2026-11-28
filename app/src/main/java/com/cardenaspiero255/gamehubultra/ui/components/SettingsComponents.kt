@@ -39,6 +39,7 @@ import com.cardenaspiero255.gamehubultra.data.SteamAccountVisibilityPolicy
 import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
 import com.cardenaspiero255.gamehubultra.platform.GamePlatformLinks
+import com.cardenaspiero255.gamehubultra.store.EpicConnectionHealth
 import com.cardenaspiero255.gamehubultra.store.StoreConnectionActivity
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUiTokens
 import kotlinx.coroutines.launch
@@ -55,6 +56,10 @@ internal fun ConnectedAccountsCard(
     val activeAccountId by store.activeAccountIdFlow().collectAsStateWithLifecycle(initialValue = null)
     val cachedSteamAccountIds = remember(accounts) {
         storeLibraryRepository.getAll().filter { it.platform == GamePlatform.STEAM }
+            .map { it.accountId }.toSet()
+    }
+    val cachedEpicAccountIds = remember(accounts) {
+        storeLibraryRepository.getAll().filter { it.platform == GamePlatform.EPIC_GAMES }
             .map { it.accountId }.toSet()
     }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -149,6 +154,13 @@ internal fun ConnectedAccountsCard(
                             System.currentTimeMillis()
                         )
                     } else null,
+                    epicStatus = if (account.platform == GamePlatform.EPIC_GAMES) {
+                        EpicConnectionHealth.statusText(
+                            account.lastSyncedAtMillis,
+                            account.id in cachedEpicAccountIds,
+                            System.currentTimeMillis()
+                        )
+                    } else null,
                     onActivate = {
                         scope.launch { store.setActiveAccount(account.id) }
                     },
@@ -165,6 +177,9 @@ internal fun ConnectedAccountsCard(
                                 context,
                                 account.platform,
                                 expectedSteamId = if (account.platform == GamePlatform.STEAM) {
+                                    account.publicId
+                                } else null,
+                                expectedEpicId = if (account.platform == GamePlatform.EPIC_GAMES) {
                                     account.publicId
                                 } else null
                             )
@@ -287,7 +302,8 @@ internal fun ConnectedAccountRow(
     onRemove: () -> Unit,
     onOpen: () -> Unit,
     onSync: () -> Unit,
-    steamStatus: SteamAccountSessionState? = null
+    steamStatus: SteamAccountSessionState? = null,
+    epicStatus: String? = null
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -307,6 +323,9 @@ internal fun ConnectedAccountRow(
                         SteamAccountVisibilityPolicy.statusText(steamStatus),
                         style = MaterialTheme.typography.bodySmall
                     )
+                }
+                if (epicStatus != null) {
+                    Text(epicStatus, style = MaterialTheme.typography.bodySmall)
                 }
             }
             TextButton(onClick = onActivate) {

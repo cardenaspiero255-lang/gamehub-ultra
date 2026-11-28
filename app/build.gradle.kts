@@ -15,6 +15,16 @@ val epicAuthBackendUrl = providers.environmentVariable("EPIC_AUTH_BACKEND_URL")
     .orElse("")
     .get()
 
+// Non-secret values registered in the Epic Developer Portal; never ship a client secret.
+val epicOAuthClientId = providers.environmentVariable("EPIC_OAUTH_CLIENT_ID")
+    .orElse(providers.gradleProperty("EPIC_OAUTH_CLIENT_ID"))
+    .orElse("")
+    .get()
+val epicOAuthRedirectUri = providers.environmentVariable("EPIC_OAUTH_REDIRECT_URI")
+    .orElse(providers.gradleProperty("EPIC_OAUTH_REDIRECT_URI"))
+    .orElse("")
+    .get()
+
 val supabaseUrl = providers.environmentVariable("SUPABASE_URL")
     .orElse(providers.gradleProperty("SUPABASE_URL"))
     .orElse("")
@@ -102,6 +112,16 @@ android {
             "String",
             "EPIC_AUTH_BACKEND_URL",
             quotedBuildConfig(epicAuthBackendUrl)
+        )
+        buildConfigField(
+            "String",
+            "EPIC_OAUTH_CLIENT_ID",
+            quotedBuildConfig(epicOAuthClientId)
+        )
+        buildConfigField(
+            "String",
+            "EPIC_OAUTH_REDIRECT_URI",
+            quotedBuildConfig(epicOAuthRedirectUri)
         )
         buildConfigField(
             "String",
